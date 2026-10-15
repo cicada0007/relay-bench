@@ -35,6 +35,8 @@ const { values: args } = parseArgs({
 		fault: { type: "string" },
 		"fault-after-sec": { type: "string", default: "120" },
 		"fault-for-sec": { type: "string", default: "600" },
+		// Pilot and dev runs only: install this local Relay package over the pinned one, to try a fix before it ships.
+		"relay-package": { type: "string" },
 	},
 });
 for (const name of ["task", "tool", "model", "cap-usd"]) {
@@ -43,6 +45,7 @@ for (const name of ["task", "tool", "model", "cap-usd"]) {
 const arm = ARMS[args.tool];
 if (!arm) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}`);
 if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
+if (args["relay-package"] && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only");
 const key = process.env.RELAY_BENCH_ANTHROPIC_KEY;
 if (!key) throw new Error("RELAY_BENCH_ANTHROPIC_KEY is not set");
 
@@ -151,6 +154,17 @@ try {
 	);
 	if (setup.exitCode !== 0) throw new Error(`setup failed: ${setup.stderr.slice(-400)}`);
 	for (const [path, content] of Object.entries(arm.files({ model: args.model }))) await work.files.write(path, content);
+	if (args["relay-package"]) {
+		const pkg = readFileSync(args["relay-package"]);
+		record.relayPackageSha256 = sha(pkg);
+		await work.files.write("/home/user/relay-test.tgz", pkg);
+		const installed = await sh(
+			work,
+			"npm install -g --prefix /home/user/.relay/npm-global --no-fund --no-audit --loglevel=error /home/user/relay-test.tgz && relay --version",
+		);
+		if (installed.exitCode !== 0) throw new Error(`installing the Relay package failed: ${installed.stderr.slice(-400)}`);
+		record.relayPackageVersion = installed.stdout.trim().split("\n").pop();
+	}
 
 	// The meter runs as root at api.anthropic.com inside this sandbox, so no tool's endpoint setting changes, and its
 	// log sits in a root-owned folder the tool can read but not rewrite.
