@@ -128,7 +128,7 @@ for (const id of readdirSync(TASKS).sort()) {
 }
 
 const template = readFileSync(join(ROOT, "scripts", "review-page.template.html"), "utf8");
-const data = JSON.stringify({ builtAt: new Date().toISOString(), tasks }).replaceAll("<", "\\u003c");
+const data = JSON.stringify({ builtAt: new Date().toISOString(), tasks }).replaceAll("<", "\\u003c").replaceAll("\uFFFD", "\\ufffd");
 mkdirSync(join(ROOT, "review"), { recursive: true });
 writeFileSync(join(ROOT, "review", "task-review.html"), template.replace("__REVIEW_DATA__", () => data));
 console.log(`review/task-review.html: ${tasks.length} tasks (${tasks.filter((t) => !t.checks).length} without CHECKS.md)`);
