@@ -96,6 +96,8 @@ function splitChecks(text) {
 	return result;
 }
 
+// REVIEW_SKIP=a,b leaves out tasks whose builders are still at work.
+const SKIP = new Set((process.env.REVIEW_SKIP ?? "").split(",").filter(Boolean));
 const tasks = [];
 for (const id of readdirSync(TASKS).sort()) {
 	const dir = join(TASKS, id);
@@ -104,7 +106,9 @@ for (const id of readdirSync(TASKS).sort()) {
 	if (task.kind !== "long") continue;
 	const request = readFileSync(join(dir, "request.md"), "utf8");
 	const checksPath = join(dir, "judge", "CHECKS.md");
-	const checks = existsSync(checksPath) ? splitChecks(readFileSync(checksPath, "utf8")) : null;
+	// A task is shown once its builder has finished it: judge/CHECKS.md is written last.
+	if (!existsSync(checksPath) || SKIP.has(id)) continue;
+	const checks = splitChecks(readFileSync(checksPath, "utf8"));
 	const counts = {};
 	if (checks) {
 		for (const [part, body] of Object.entries(checks.parts)) {
