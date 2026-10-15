@@ -44,7 +44,14 @@ const out = join(ROOT, args.out);
 const runDir = join(out, runId);
 mkdirSync(runDir, { recursive: true });
 
-const tar = (dir) => execFileSync("tar", ["-czf", "-", "--exclude", ".DS_Store", "--exclude", "node_modules", "-C", dir, "."], { maxBuffer: 256 * 1024 * 1024 });
+// macOS tar adds AppleDouble "._*" files for extended attributes; in the Linux sandbox they look like broken test files
+// (the first large pilot's R0 failed on judge-r0/._*.test.js for every tool). COPYFILE_DISABLE stops them; the
+// exclude also drops any already on disk.
+const tar = (dir) =>
+	execFileSync("tar", ["-czf", "-", "--exclude", ".DS_Store", "--exclude", "._*", "--exclude", "node_modules", "-C", dir, "."], {
+		maxBuffer: 256 * 1024 * 1024,
+		env: { ...process.env, COPYFILE_DISABLE: "1" },
+	});
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const BASE_ENV = { DO_NOT_TRACK: "1", PATH: RUN_PATH, HOME: "/home/user", TERM: "dumb", CI: "1" };
 /** Where each runtime looks for trusted certificates; with the run's authority added (sandbox/meter-intercept.sh), every

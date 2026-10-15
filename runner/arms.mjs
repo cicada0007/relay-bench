@@ -5,6 +5,33 @@
 
 /** The meter's plain-HTTP door, for Prime Agent only (see its arm). Same process, log and spend cap as the main one. */
 export const METER_PLAIN_URL = "http://127.0.0.1:8787";
+
+/** The test models as Anthropic describes them (the same values as Relay's catalogue, from Anthropic's model pages).
+ *  Prime Agent 0.10.0's built-in list stops at Sonnet 5 and Haiku 4.5; for a model it does not know it falls back to
+ *  4,096 output tokens with thinking off, so it is told these the way a user adopting a new model would.
+ *  `reasoning` is false for Haiku 5.5 only because Prime Agent 0.10.0 picks the thinking format from the model's name
+ *  (crates/pa-ai/src/providers/anthropic/mod.rs, supports_adaptive_thinking): "sonnet-5" gets the adaptive format, but
+ *  "haiku-5-5" gets the older budget format, which the API refuses with a 400 for that model. So on Haiku 5.5, Prime
+ *  Agent 0.10.0 can only run without thinking; the results page says so. */
+export const MODEL_SPECS = {
+	"claude-sonnet-5-5": { name: "Claude Sonnet 5.5", reasoning: true, cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 } },
+	"claude-haiku-5-5": { name: "Claude Haiku 5.5", reasoning: false, cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 } },
+};
+function modelEntry(model) {
+	const spec = MODEL_SPECS[model];
+	if (!spec) throw new Error(`no model spec for ${model}`);
+	return {
+		id: model,
+		name: spec.name,
+		api: "anthropic-messages",
+		reasoning: spec.reasoning,
+		...(spec.reasoning ? { thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } } : {}),
+		input: ["text", "image"],
+		cost: spec.cost,
+		contextWindow: 1_000_000,
+		maxTokens: 128_000,
+	};
+}
 export const WORK = "/home/user/work";
 export const REQUEST = "/home/user/request.md";
 
@@ -38,7 +65,9 @@ export const ARMS = {
 		 *  stream.rs), so its behaviour does not change. */
 		files: ({ model }) => ({
 			"/home/user/.prime/agent/settings.json": JSON.stringify({ defaultProvider: "anthropic", defaultModel: model }),
-			"/home/user/.prime/agent/models.json": JSON.stringify({ providers: { anthropic: { baseUrl: METER_PLAIN_URL } } }),
+			"/home/user/.prime/agent/models.json": JSON.stringify({
+				providers: { anthropic: { baseUrl: METER_PLAIN_URL, models: [modelEntry(model)] } },
+			}),
 		}),
 		command: ({ model, gates, limitMinutes }) =>
 			[
