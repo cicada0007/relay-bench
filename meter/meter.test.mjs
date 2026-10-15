@@ -142,3 +142,61 @@ test("serves HTTPS with the run's certificate and passes compressed responses th
 		provider.close();
 	}
 });
+
+test("injects test D's faults into model requests while the window is open", async () => {
+	const provider = fakeProvider();
+	await new Promise((r) => provider.listen(0, "127.0.0.1", r));
+	const upstream = `http://127.0.0.1:${provider.address().port}`;
+	const dir = mkdtempSync(join(tmpdir(), "meter-fault-"));
+	const start = async (fault) => {
+		const port = String(20000 + Math.floor(Math.random() * 20000));
+		const log = join(dir, `${fault}.jsonl`);
+		const meter = spawn(process.execPath, [join(here, "meter.mjs"), "--port", port, "--upstream", upstream, "--log", log, "--fault", fault, "--fault-after-sec", "0", "--fault-for-sec", "60"], { stdio: ["ignore", "pipe", "inherit"] });
+		await new Promise((resolve) => meter.stdout.once("data", resolve));
+		return { meter, port, log };
+	};
+	const call = (port) => fetch(`http://127.0.0.1:${port}/v1/messages`, { method: "POST", headers: { "x-api-key": "test-key", "content-type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-5-5" }) });
+	const errors = await start("errors");
+	const network = await start("network");
+	try {
+		const refused = await call(errors.port);
+		assert.equal(refused.status, 529);
+		assert.equal((await refused.json()).error.type, "overloaded_error");
+		// Requests that are not model calls pass straight through.
+		assert.equal((await fetch(`http://127.0.0.1:${errors.port}/v1/models`, { headers: { "x-api-key": "test-key" } })).status, 200);
+		await assert.rejects(call(network.port));
+		await new Promise((r) => setTimeout(r, 100));
+		assert.equal(JSON.parse(readFileSync(errors.log, "utf8").split("\n")[0]).fault, "errors");
+		assert.equal(JSON.parse(readFileSync(network.log, "utf8").split("\n")[0]).fault, "network");
+	} finally {
+		errors.meter.kill();
+		network.meter.kill();
+		provider.close();
+	}
+});
+
+test("a network fault cuts model connections that are already open when it starts", async () => {
+	const slow = createServer((req, res) => {
+		req.resume();
+		req.on("end", () => {
+			res.writeHead(200, { "content-type": "text/event-stream" });
+			res.write('event: message_start\ndata: {"type":"message_start","message":{"model":"claude-haiku-5-5","usage":{"input_tokens":1,"output_tokens":1}}}\n\n');
+			const timer = setTimeout(() => res.end('event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":2}}\n\n'), 3000);
+			res.on("close", () => clearTimeout(timer));
+		});
+	});
+	await new Promise((r) => slow.listen(0, "127.0.0.1", r));
+	const log = join(mkdtempSync(join(tmpdir(), "meter-cut-")), "usage.jsonl");
+	const port = String(20000 + Math.floor(Math.random() * 20000));
+	const meter = spawn(process.execPath, [join(here, "meter.mjs"), "--port", port, "--upstream", `http://127.0.0.1:${slow.address().port}`, "--log", log, "--fault", "network", "--fault-after-sec", "1", "--fault-for-sec", "5"], { stdio: ["ignore", "pipe", "inherit"] });
+	await new Promise((resolve) => meter.stdout.once("data", resolve));
+	try {
+		const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude-haiku-5-5", stream: true }) });
+		await assert.rejects(response.text());
+		await new Promise((r) => setTimeout(r, 100));
+		assert.ok(readFileSync(log, "utf8").includes('"cutInFlight":1'));
+	} finally {
+		meter.kill();
+		slow.close();
+	}
+});

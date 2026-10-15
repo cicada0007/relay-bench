@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // One benchmark run: one tool, one task, one model, one repetition. Works the task in a fresh sandbox through the
 // meter, collects what the tool left, then grades it with the hidden judge in a second fresh sandbox the tool never saw.
-// Appends one record to <out>/records.jsonl and keeps the run's logs, metered usage and patch under <out>/<run-id>/.
+// Appends one record to <out>/records.jsonl and keeps the run's logs, metered usage, patch and graded tree under
+// <out>/<run-id>/.
 //
 //   RELAY_BENCH_ANTHROPIC_KEY=... E2B_API_KEY=... node runner/run-one.mjs \
-//     --task py-ledger --tool claude-code --model claude-haiku-5-5 --rep 1 --cap-usd 1 --test pilot --out runs/round-1
-import { execFileSync } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+//     --task py-mini-sql --tool claude-code --model claude-haiku-5-5 --rep 1 --cap-usd 1 --test pilot --out runs/round-1
+//
+// Test D (PREREGISTRATION.md) adds --fault kill|network|errors. Every tool then runs inside the same restart loop
+// (sandbox/restart-loop.sh), which runs the tool's own documented resume command when it stops without succeeding, up
+// to 3 times. "network" and "errors" are injected by the meter; "kill" kills the tool's process group once, as root,
+// --fault-after-sec after the run's first model request. Network and error faults last --fault-for-sec.
+import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -14,6 +19,7 @@ import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
 import { ARMS, REQUEST, saidDone, WORK } from "./arms.mjs";
+import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -26,6 +32,9 @@ const { values: args } = parseArgs({
 		test: { type: "string", default: "dev" },
 		out: { type: "string", default: "runs/dev" },
 		"tasks-dir": { type: "string", default: join(ROOT, "tasks") },
+		fault: { type: "string" },
+		"fault-after-sec": { type: "string", default: "120" },
+		"fault-for-sec": { type: "string", default: "600" },
 	},
 });
 for (const name of ["task", "tool", "model", "cap-usd"]) {
@@ -33,27 +42,19 @@ for (const name of ["task", "tool", "model", "cap-usd"]) {
 }
 const arm = ARMS[args.tool];
 if (!arm) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}`);
+if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
 const key = process.env.RELAY_BENCH_ANTHROPIC_KEY;
 if (!key) throw new Error("RELAY_BENCH_ANTHROPIC_KEY is not set");
 
 const taskDir = join(args["tasks-dir"], args.task);
 const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
 const request = readFileSync(join(taskDir, "request.md"), "utf8");
-const runId = `${args.test}-${args.task}-${args.tool}-${args.model}-r${args.rep}-${randomBytes(3).toString("hex")}`;
+const faultTag = args.fault ? `-${args.fault}` : "";
+const runId = `${args.test}-${args.task}-${args.tool}-${args.model}${faultTag}-r${args.rep}-${randomBytes(3).toString("hex")}`;
 const out = join(ROOT, args.out);
 const runDir = join(out, runId);
 mkdirSync(runDir, { recursive: true });
 
-// macOS tar adds AppleDouble "._*" files for extended attributes; in the Linux sandbox they look like broken test files
-// (the first large pilot's R0 failed on judge-r0/._*.test.js for every tool). COPYFILE_DISABLE stops them; the
-// exclude also drops any already on disk.
-const tar = (dir) =>
-	execFileSync("tar", ["-czf", "-", "--exclude", ".DS_Store", "--exclude", "._*", "--exclude", "node_modules", "-C", dir, "."], {
-		maxBuffer: 256 * 1024 * 1024,
-		env: { ...process.env, COPYFILE_DISABLE: "1" },
-	});
-const sha = (data) => createHash("sha256").update(data).digest("hex");
-const BASE_ENV = { DO_NOT_TRACK: "1", PATH: RUN_PATH, HOME: "/home/user", TERM: "dumb", CI: "1" };
 /** Where each runtime looks for trusted certificates; with the run's authority added (sandbox/meter-intercept.sh), every
  *  tool reaches the meter at api.anthropic.com as if it were the provider. Node reads NODE_EXTRA_CA_CERTS; Python's
  *  ssl, httpx and requests read the system bundle through these two. */
@@ -63,17 +64,8 @@ const TRUST_ENV = {
 	REQUESTS_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt",
 };
 const METER_DIR = "/var/lib/relay-bench";
-
-async function sh(sandbox, command, options = {}) {
-	try {
-		// Sandbox commands run in a login shell, which resets PATH from the system profile, so set it in the command.
-		const r = await sandbox.commands.run(`export PATH=${RUN_PATH}; ${command}`, { envs: BASE_ENV, ...options });
-		return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
-	} catch (error) {
-		// A non-zero exit is thrown as a CommandExitError carrying the result; a timeout carries no exit code.
-		return { exitCode: error.exitCode ?? null, stdout: error.stdout ?? "", stderr: error.stderr || String(error.message ?? error), error: error.name };
-	}
-}
+const RESTART_LOOP = "/opt/relay-bench/restart-loop.sh";
+const TOOL_PGID = "/home/user/tool.pgid";
 
 const record = {
 	runId,
@@ -87,12 +79,56 @@ const record = {
 	limitMinutes: task.timeLimitMinutes,
 	pins: PINS,
 	template: TEMPLATE_NAME,
+	...(args.fault ? { fault: { kind: args.fault, afterSec: Number(args["fault-after-sec"]), forSec: Number(args["fault-for-sec"]) } } : {}),
 	startedAt: new Date().toISOString(),
 };
 
 const repoTar = tar(join(taskDir, "repo"));
 record.repoSha256 = sha(repoTar);
 record.requestSha256 = sha(request);
+// Content fingerprints, comparable with TASKS.lock.json: proof the run used the locked task.
+record.taskHashes = taskHashes(taskDir);
+
+/** The first model request in the meter's log, in epoch ms, once there is one. */
+async function firstModelRequestAt(sandbox, meterLog) {
+	const text = await sandbox.files.read(meterLog).catch(() => "");
+	for (const line of text.split("\n")) {
+		if (!line) continue;
+		const entry = JSON.parse(line);
+		if (entry.path?.split("?")[0].endsWith("/messages")) return Date.parse(entry.ts) - (entry.ms ?? 0);
+	}
+	return undefined;
+}
+
+/** Runs the tool, and for a kill fault kills its process group once, --fault-after-sec after its first model request. */
+async function runTool(sandbox, command, options, meterLog) {
+	if (args.fault !== "kill") return sh(sandbox, command, options);
+	const handle = await sandbox.commands.run(`export PATH=${RUN_PATH}; ${command}`, { ...options, background: true });
+	let killed = false;
+	const watcher = (async () => {
+		const deadline = Date.now() + options.timeoutMs;
+		while (!killed && Date.now() < deadline) {
+			await new Promise((r) => setTimeout(r, 5_000));
+			const first = await firstModelRequestAt(sandbox, meterLog);
+			if (first !== undefined && Date.now() >= first + Number(args["fault-after-sec"]) * 1000) {
+				const k = await sh(sandbox, `kill -KILL -- -$(cat ${TOOL_PGID})`, { user: "root" });
+				record.faultInjectedAt = new Date().toISOString();
+				record.faultInjected = k.exitCode === 0;
+				killed = true;
+			}
+		}
+	})();
+	let result;
+	try {
+		const r = await handle.wait();
+		result = { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
+	} catch (error) {
+		result = { exitCode: error.exitCode ?? null, stdout: error.stdout ?? "", stderr: error.stderr || String(error.message ?? error), error: error.name };
+	}
+	killed = true;
+	await watcher;
+	return result;
+}
 
 let resultTar;
 const work = await Sandbox.create(TEMPLATE_NAME, { timeoutMs: (task.timeLimitMinutes + 30) * 60_000, metadata: { relayBench: runId } });
@@ -106,6 +142,7 @@ try {
 	record.meterSha256 = sha(meterSource);
 	await work.files.write("/opt/relay-bench/meter.mjs", meterSource, { user: "root" });
 	await work.files.write("/opt/relay-bench/meter-intercept.sh", readFileSync(join(ROOT, "sandbox", "meter-intercept.sh"), "utf8"), { user: "root" });
+	if (args.fault) await work.files.write(RESTART_LOOP, readFileSync(join(ROOT, "sandbox", "restart-loop.sh"), "utf8"), { user: "root" });
 	const setup = await sh(
 		work,
 		`mkdir -p ${WORK} && tar -xzf /home/user/repo.tgz -C ${WORK} && cd ${WORK} && ` +
@@ -120,10 +157,14 @@ try {
 	const intercept = await sh(work, "sh /opt/relay-bench/meter-intercept.sh", { user: "root" });
 	if (intercept.exitCode !== 0) throw new Error(`the meter's certificate setup failed: ${intercept.stderr.slice(-400)}`);
 	const meterLog = `${METER_DIR}/meter.jsonl`;
+	const meterFault =
+		args.fault === "network" || args.fault === "errors"
+			? ` --fault ${args.fault} --fault-after-sec ${args["fault-after-sec"]} --fault-for-sec ${args["fault-for-sec"]}`
+			: "";
 	await work.commands.run(
 		`export PATH=${RUN_PATH}; node /opt/relay-bench/meter.mjs --port 443 --tls-cert /root/meter-tls/meter.crt ` +
 			`--tls-key /root/meter-tls/meter.key --upstream https://api.anthropic.com --resolve-upstream-by-dns ` +
-			`--plain-port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]} > ${METER_DIR}/meter.out 2>&1`,
+			`--plain-port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]}${meterFault} > ${METER_DIR}/meter.out 2>&1`,
 		{ background: true, envs: BASE_ENV, user: "root" },
 	);
 	// Checked the way the tools will see it: as the sandbox user, by name, through the hosts file and the run's certificate.
@@ -134,17 +175,31 @@ try {
 	if (up.exitCode !== 0) throw new Error(`the meter did not start: ${up.stdout.slice(-400)}`);
 	record.meterMode = "intercept";
 
-	const command = arm.command({ model: args.model, gates: task.gates, limitMinutes: task.timeLimitMinutes, capUsd: args["cap-usd"] });
-	record.command = command;
+	const settings = { model: args.model, gates: task.gates, limitMinutes: task.timeLimitMinutes, capUsd: args["cap-usd"] };
+	const toolCommand = arm.command(settings);
+	record.command = toolCommand;
+	let command = toolCommand;
+	if (args.fault) {
+		const resume = arm.resume(settings);
+		record.resumeCommand = resume;
+		const q = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
+		command = `sh ${RESTART_LOOP} ${q(toolCommand)} ${q(resume)} ${TOOL_PGID}`;
+	}
 	const toolStarted = Date.now();
-	const run = await sh(work, command, {
-		cwd: WORK,
-		timeoutMs: task.timeLimitMinutes * 60_000,
-		envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ANTHROPIC_API_KEY: key },
-	});
+	const run = await runTool(
+		work,
+		command,
+		{
+			cwd: WORK,
+			timeoutMs: task.timeLimitMinutes * 60_000,
+			envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ANTHROPIC_API_KEY: key },
+		},
+		meterLog,
+	);
 	record.wallMs = Date.now() - toolStarted;
 	record.exitCode = run.exitCode;
 	record.timedOut = run.exitCode === null && /timeout|deadline/i.test(`${run.error} ${run.stderr}`);
+	if (args.fault) record.restarts = (run.stderr.match(/^restart-loop: restart \d+/gm) ?? []).length;
 	writeFileSync(join(runDir, "tool.stdout.gz"), gzipSync(run.stdout));
 	writeFileSync(join(runDir, "tool.stderr.gz"), gzipSync(run.stderr));
 
@@ -177,6 +232,7 @@ try {
 	record.usage = {
 		requests: priced.length,
 		refusedAtCap: lines.filter((l) => l.refused === "spend_cap_reached").length,
+		...(args.fault ? { faulted: lines.filter((l) => l.fault).length } : {}),
 		input: priced.reduce((s, l) => s + l.input, 0),
 		output: priced.reduce((s, l) => s + l.output, 0),
 		cacheRead: priced.reduce((s, l) => s + l.cacheRead, 0),
@@ -191,47 +247,15 @@ try {
 }
 
 // The judge works on a clean copy, in a sandbox the tool never saw.
-const judgeBox = await Sandbox.create(TEMPLATE_NAME, { timeoutMs: 30 * 60_000, metadata: { relayBench: `${runId}-judge` } });
-record.judgeSandbox = judgeBox.sandboxId;
-try {
-	await judgeBox.files.write("/home/user/result.tgz", resultTar);
-	const judgeTar = tar(join(taskDir, "judge"));
-	record.judgeSha256 = sha(judgeTar);
-	await judgeBox.files.write("/home/user/judge.tgz", judgeTar);
-	const prep = await sh(
-		judgeBox,
-		"mkdir -p /home/user/checkout /home/user/judge && tar -xzf /home/user/result.tgz -C /home/user/checkout && " +
-			"tar -xzf /home/user/judge.tgz -C /home/user/judge && cd /home/user/checkout && " +
-			"git config --global user.name judge && git config --global user.email judge@example.com && " +
-			"git init -q -b main && git add -A && git commit -q -m result",
-	);
-	if (prep.exitCode !== 0) throw new Error(`judge setup failed: ${prep.stderr.slice(-400)}`);
-	const judged = await sh(judgeBox, "node /home/user/judge/judge.mjs /home/user/checkout", { timeoutMs: 15 * 60_000 });
-	const line = judged.stdout.trim().split("\n").filter(Boolean).pop() ?? "";
-	try {
-		record.judge = JSON.parse(line);
-	} catch {
-		record.judge = { error: "judge printed no JSON", stderr: judged.stderr.slice(-600) };
-	}
-} finally {
-	await judgeBox.kill().catch(() => {});
-}
-
-const reqs = record.judge?.requirements ?? {};
-const met = task.requirements.filter((r) => reqs[r] === true && record.judge?.R0 === true).length;
-record.score = { requirementsMet: met, requirements: task.requirements.length, share: met / task.requirements.length, R0: record.judge?.R0 === true };
-// Secondary measure: the share of the judge's individual checks passed, counted only when R0 holds, like the parts.
-const checks = Object.values(record.judge?.checks ?? {}).filter((c) => Array.isArray(c) && c.length === 2);
-if (checks.length) {
-	const total = checks.reduce((s, c) => s + c[1], 0);
-	const passed = record.score.R0 ? checks.reduce((s, c) => s + c[0], 0) : 0;
-	record.score.checks = { passed, total, share: total ? passed / total : 0 };
-}
-record.saidDoneButFailed = record.saidDone === true && met < task.requirements.length;
+const graded = await judgeResult(resultTar, taskDir, runId);
+Object.assign(record, graded);
+const { score, saidDoneButFailed } = scoreOf(task, record.judge, record.saidDone);
+record.score = score;
+record.saidDoneButFailed = saidDoneButFailed;
 record.finishedAt = new Date().toISOString();
 appendFileSync(join(out, "records.jsonl"), `${JSON.stringify(record)}\n`);
 writeFileSync(join(runDir, "record.json"), JSON.stringify(record, null, 2));
 console.log(
-	`${runId}: ${met}/${task.requirements.length} met, said done ${record.saidDone}, ` +
+	`${runId}: ${score.requirementsMet}/${task.requirements.length} met, said done ${record.saidDone}, ` +
 		`$${record.usage?.costUsd?.toFixed(4)}, ${Math.round((record.wallMs ?? 0) / 1000)}s, models ${record.usage?.modelsSeen?.join("+")}`,
 );

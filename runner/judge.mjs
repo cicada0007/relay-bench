@@ -2,11 +2,46 @@
 // graded again the same way). The judge always works on a clean copy, in a fresh sandbox the tool never saw.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { Sandbox } from "e2b";
 import { RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
 
 export const sha = (data) => createHash("sha256").update(data).digest("hex");
+
+const SKIP = new Set([".DS_Store", "node_modules", "__pycache__", ".git"]);
+/** A content fingerprint of a folder: every file's path and bytes, in sorted order, so the same tree always gives the
+ *  same hash (a tarball's hash changes with file times). Used for the public task lock (TASKS.lock.json). */
+export function treeHash(dir) {
+	const files = [];
+	const walk = (d) => {
+		for (const name of readdirSync(d)) {
+			if (SKIP.has(name) || name.startsWith("._") || name.endsWith(".pyc")) continue;
+			const p = join(d, name);
+			if (statSync(p).isDirectory()) walk(p);
+			else files.push(relative(dir, p));
+		}
+	};
+	walk(dir);
+	const hash = createHash("sha256");
+	for (const f of files.sort()) {
+		hash.update(f);
+		hash.update("\0");
+		hash.update(readFileSync(join(dir, f)));
+		hash.update("\0");
+	}
+	return hash.digest("hex");
+}
+
+/** The fingerprints a task is locked by: what a tool starts from, what it is asked, and how it is graded. */
+export function taskHashes(taskDir) {
+	return {
+		task: sha(readFileSync(join(taskDir, "task.json"))),
+		request: sha(readFileSync(join(taskDir, "request.md"))),
+		repo: treeHash(join(taskDir, "repo")),
+		judge: treeHash(join(taskDir, "judge")),
+	};
+}
 
 // macOS tar adds AppleDouble "._*" files for extended attributes; in the Linux sandbox they look like broken source and
 // test files (the first large pilot's starting repository failed its own lint gate on them). COPYFILE_DISABLE stops

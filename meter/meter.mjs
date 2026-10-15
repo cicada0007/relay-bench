@@ -18,6 +18,11 @@
 // so one log and one spend cap cover it: for a tool that trusts only its own built-in certificate list (Prime Agent
 // 0.10.0), which therefore reaches the meter by its endpoint setting instead. Streaming responses are passed through as
 // they arrive and parsed on the side.
+//
+// Test D's faults (PREREGISTRATION.md) are injected here, the same way for every tool: --fault network drops every model
+// request's connection, and --fault errors answers every model request 529 overloaded_error, from --fault-after-sec
+// after the run's first model request, for --fault-for-sec. When a network fault starts, model connections already open
+// are cut too, as a real outage would. Each faulted request is logged with its fault.
 import { Resolver } from "node:dns";
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
@@ -36,6 +41,9 @@ const { values } = parseArgs({
 		"tls-key": { type: "string" },
 		"resolve-upstream-by-dns": { type: "boolean", default: false },
 		"plain-port": { type: "string" },
+		fault: { type: "string" },
+		"fault-after-sec": { type: "string", default: "120" },
+		"fault-for-sec": { type: "string", default: "600" },
 	},
 });
 
@@ -154,8 +162,46 @@ function log(entry) {
 	appendFileSync(values.log, `${JSON.stringify(entry)}\n`);
 }
 
+const fault = values.fault;
+if (fault !== undefined && fault !== "network" && fault !== "errors") throw new Error(`unknown --fault ${fault}`);
+let firstModelRequestAt;
+/** Client connections of model requests in progress, so a network fault can cut them when it starts. */
+const openModelSockets = new Set();
+/** True while the fault window is open: it opens --fault-after-sec after the first model request. */
+function faultActive(now) {
+	if (!fault || firstModelRequestAt === undefined) return false;
+	const opens = firstModelRequestAt + Number(values["fault-after-sec"]) * 1000;
+	return now >= opens && now < opens + Number(values["fault-for-sec"]) * 1000;
+}
+
 async function handle(req, res) {
 	const started = Date.now();
+	const isModelRequest = req.method === "POST" && req.url?.split("?")[0].endsWith("/messages");
+	if (isModelRequest && firstModelRequestAt === undefined) {
+		firstModelRequestAt = started;
+		if (fault === "network") {
+			setTimeout(() => {
+				for (const socket of openModelSockets) socket.destroy();
+				if (openModelSockets.size) log({ ts: new Date().toISOString(), fault, cutInFlight: openModelSockets.size });
+				openModelSockets.clear();
+			}, Number(values["fault-after-sec"]) * 1000).unref();
+		}
+	}
+	if (isModelRequest) {
+		openModelSockets.add(req.socket);
+		res.on("close", () => openModelSockets.delete(req.socket));
+	}
+	if (isModelRequest && faultActive(started)) {
+		for await (const _ of req) {}
+		log({ ts: new Date().toISOString(), path: req.url, fault, ms: 0 });
+		if (fault === "network") {
+			req.socket.destroy();
+			return;
+		}
+		res.writeHead(529, { "content-type": "application/json" });
+		res.end(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }));
+		return;
+	}
 	if (capUsd !== undefined && spentUsd >= capUsd && req.method === "POST") {
 		for await (const _ of req) {}
 		log({ ts: new Date().toISOString(), path: req.url, status: 429, refused: "spend_cap_reached", spentUsd, ms: 0 });

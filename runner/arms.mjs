@@ -35,6 +35,10 @@ function modelEntry(model) {
 export const WORK = "/home/user/work";
 export const REQUEST = "/home/user/request.md";
 
+/** What every tool is told when test D's restart loop starts it again after it stopped without finishing. */
+export const RESUME_PROMPT =
+	"Your previous session on this request was interrupted. Continue from where it stopped and finish the request in /home/user/request.md.";
+
 const quote = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
 export const ARMS = {
@@ -50,6 +54,8 @@ export const ARMS = {
 		}),
 		command: ({ capUsd }) =>
 			`relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
+		/** The queue keeps its plan and tasks on disk; running it again picks up where it stopped. */
+		resume: ({ capUsd }) => `relay queue run --spend-cap ${capUsd}`,
 		env: () => ({}),
 		/** Relay's result is what a reviewer would merge: its verified task branches, merged in plan order. */
 		result: "relay-merge",
@@ -69,15 +75,10 @@ export const ARMS = {
 				providers: { anthropic: { baseUrl: METER_PLAIN_URL, models: [modelEntry(model)] } },
 			}),
 		}),
-		command: ({ model, gates, limitMinutes }) =>
-			[
-				"prime-agent -p --autonomous",
-				...Object.values(gates).map((gate) => `--autonomous-gate ${quote(gate)}`),
-				"--autonomous-max-turns 100000 --autonomous-max-tokens 1000000000 --autonomous-max-continuations 100",
-				`--autonomous-timeout-ms ${limitMinutes * 60_000}`,
-				`--model anthropic/${model}`,
-				`"$(cat ${REQUEST})"`,
-			].join(" "),
+		command: ({ model, gates, limitMinutes }) => primeCommand({ model, gates, limitMinutes, prompt: `"$(cat ${REQUEST})"` }),
+		/** Its documented -c/--continue: the previous session, with the same unattended settings. */
+		resume: ({ model, gates, limitMinutes }) =>
+			primeCommand({ model, gates, limitMinutes, prompt: quote(RESUME_PROMPT), extra: "--continue" }),
 		env: () => ({}),
 		result: "working-tree",
 	},
@@ -88,6 +89,9 @@ export const ARMS = {
 		 *  test model so its background requests do not use a second model. */
 		command: ({ model }) =>
 			`claude -p "$(cat ${REQUEST})" --model ${model} --output-format json --dangerously-skip-permissions`,
+		/** Its documented -c/--continue, which works with -p: the most recent conversation in this directory. */
+		resume: ({ model }) =>
+			`claude -p --continue ${quote(RESUME_PROMPT)} --model ${model} --output-format json --dangerously-skip-permissions`,
 		env: ({ model }) => ({
 			ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
 			ANTHROPIC_DEFAULT_SONNET_MODEL: model,
@@ -104,10 +108,24 @@ export const ARMS = {
 		/** Hermes's one-shot mode with command approvals off inside the sandbox (--yolo), on the test model. It reaches
 		 *  the meter at api.anthropic.com like Claude Code and Relay, so it keeps the model's thinking between steps. */
 		command: ({ model }) => `hermes -z "$(cat ${REQUEST})" -m ${model} --provider anthropic --yolo`,
+		/** Its documented --continue: the most recent session. */
+		resume: ({ model }) => `hermes -z ${quote(RESUME_PROMPT)} --continue -m ${model} --provider anthropic --yolo`,
 		env: () => ({}),
 		result: "working-tree",
 	},
 };
+
+function primeCommand({ model, gates, limitMinutes, prompt, extra }) {
+	return [
+		"prime-agent -p --autonomous",
+		...(extra ? [extra] : []),
+		...Object.values(gates).map((gate) => `--autonomous-gate ${quote(gate)}`),
+		"--autonomous-max-turns 100000 --autonomous-max-tokens 1000000000 --autonomous-max-continuations 100",
+		`--autonomous-timeout-ms ${limitMinutes * 60_000}`,
+		`--model anthropic/${model}`,
+		prompt,
+	].join(" ");
+}
 
 /** What the tool itself said about finishing, read from its own output. */
 export function saidDone(tool, { exitCode, stdout, relayMerge }) {

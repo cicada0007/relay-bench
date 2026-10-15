@@ -29,9 +29,12 @@ const { values: args } = parseArgs({
 		out: { type: "string", default: "runs/round-1" },
 		"tasks-dir": { type: "string", default: join(ROOT, "tasks") },
 		"dry-run": { type: "boolean", default: false },
+		faults: { type: "string" },
 	},
 });
 for (const name of ["test", "model", "cap-usd", "stage-cap-usd"]) if (!args[name]) throw new Error(`--${name} is required`);
+// A counted test runs only on locked tasks (scripts/lock-tasks.mjs); pilots and dev runs may use tasks still in work.
+const counted = !/^(pilot|dev)/.test(args.test);
 
 /** E2B, 2 vCPU + 4 GiB, checked 15 Oct 2026 at e2b.dev/pricing: $0.000046 per second. */
 const E2B_USD_PER_SECOND = 0.000046;
@@ -43,23 +46,38 @@ const capUsd = Number(args["cap-usd"]);
 const stageCap = Number(args["stage-cap-usd"]);
 const e2bCap = Number(args["e2b-cap-usd"]);
 
+/** --tasks: a comma list of task ids and kind:<kind> selectors (kind:long,kind:everyday), in that order. */
 function taskIds() {
-	const all = readdirSync(args["tasks-dir"]).filter((id) => existsSync(join(args["tasks-dir"], id, "task.json")));
-	if (args.tasks.startsWith("kind:")) {
-		const kind = args.tasks.slice(5);
-		return all.filter((id) => JSON.parse(readFileSync(join(args["tasks-dir"], id, "task.json"), "utf8")).kind === kind).sort();
+	const all = readdirSync(args["tasks-dir"]).filter((id) => existsSync(join(args["tasks-dir"], id, "task.json"))).sort();
+	const kindOf = (id) => JSON.parse(readFileSync(join(args["tasks-dir"], id, "task.json"), "utf8")).kind;
+	const ids = [];
+	for (const item of args.tasks.split(",")) {
+		for (const id of item.startsWith("kind:") ? all.filter((t) => kindOf(t) === item.slice(5)) : [item]) {
+			if (!ids.includes(id)) ids.push(id);
+		}
 	}
-	return args.tasks.split(",");
+	return ids;
 }
+/** Test D's faults, one run per fault; every other test runs without one. */
+const faults = args.faults ? args.faults.split(",") : [undefined];
 
-const runKey = (j) => `${args.test}|${j.task}|${j.tool}|${args.model}|r${j.rep}`;
+const runKey = (j) => `${args.test}|${j.task}|${j.tool}|${args.model}|${j.fault ?? ""}|r${j.rep}`;
 const records = () =>
 	existsSync(recordsPath) ? readFileSync(recordsPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
-const recordKey = (r) => `${r.test}|${r.task}|${r.tool}|${r.model}|r${r.rep}`;
+const recordKey = (r) => `${r.test}|${r.task}|${r.tool}|${r.model}|${r.fault?.kind ?? ""}|r${r.rep}`;
+
+if (counted) {
+	const { lockDifferences } = await import("../scripts/lock-tasks.mjs");
+	const differences = lockDifferences(taskIds());
+	if (differences.length) {
+		for (const d of differences) console.error(`${d.id}: ${d.what}`);
+		throw new Error(`test ${args.test} is counted and its tasks do not match TASKS.lock.json; nothing was run`);
+	}
+}
 
 const jobs = [];
 for (let rep = 1; rep <= Number(args.reps); rep++)
-	for (const task of taskIds()) for (const tool of tools) jobs.push({ task, tool, rep });
+	for (const task of taskIds()) for (const fault of faults) for (const tool of tools) jobs.push({ task, tool, rep, fault });
 
 const done = new Set(records().map(recordKey));
 const pending = jobs.filter((j) => !done.has(runKey(j)));
@@ -84,6 +102,7 @@ function runOne(job) {
 				join(ROOT, "runner", "run-one.mjs"),
 				"--task", job.task, "--tool", job.tool, "--model", args.model, "--rep", String(job.rep),
 				"--cap-usd", String(capUsd), "--test", args.test, "--out", args.out, "--tasks-dir", args["tasks-dir"],
+				...(job.fault ? ["--fault", job.fault] : []),
 			],
 			{ stdio: ["ignore", "pipe", "pipe"] },
 		);
@@ -100,8 +119,14 @@ const queue = [...pending];
 const workers = Array.from({ length: Number(args.concurrency) }, async () => {
 	while (queue.length && !stopped) {
 		if (stageSpent() + (inFlight + 1) * capUsd > stageCap) {
-			stopped = `the next run could take the stage past its $${stageCap} cap`;
-			break;
+			// Runs in flight might each spend up to their cap. Wait for them before deciding: stop only when even one
+			// more run alone could pass the stage cap.
+			if (inFlight === 0) {
+				stopped = `the next run could take the stage past its ${stageCap} cap`;
+				break;
+			}
+			await new Promise((r) => setTimeout(r, 15_000));
+			continue;
 		}
 		if (e2bSpent() > e2bCap) {
 			stopped = `sandbox time passed the round's $${e2bCap} cap`;
