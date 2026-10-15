@@ -69,6 +69,15 @@ export const ARMS = {
 		}),
 		result: "working-tree",
 	},
+	hermes: {
+		label: "Hermes",
+		files: () => ({}),
+		/** Hermes's one-shot mode with command approvals off inside the sandbox (--yolo), on the test model. It reaches
+		 *  the meter at api.anthropic.com like Claude Code and Relay, so it keeps the model's thinking between steps. */
+		command: ({ model }) => `hermes -z "$(cat ${REQUEST})" -m ${model} --provider anthropic --yolo`,
+		env: () => ({}),
+		result: "working-tree",
+	},
 };
 
 /** What the tool itself said about finishing, read from its own output. */

@@ -14,6 +14,7 @@ export const PINS = Object.freeze({
 	relay: "0.6.117",
 	primeAgent: "0.10.0",
 	claudeCode: "2.1.300",
+	hermes: "0.22.2",
 });
 
 /** PATH inside a run: where each tool's installer puts its command for the sandbox user. */
@@ -21,6 +22,7 @@ export const RUN_PATH = [
 	"/home/user/.relay/npm-global/bin",
 	"/home/user/.local/bin",
 	"/home/user/.prime-agent/bin",
+	"/home/user/.hermes/bin",
 	"/usr/local/bin",
 	"/usr/bin",
 	"/bin",
@@ -42,10 +44,15 @@ export function benchTemplate() {
 				`curl -fsSL https://relayevals.com/harness/install.sh | RELAY_VERSION=${PINS.relay} RELAY_BOOTSTRAP_KERNEL_ON_INSTALL=1 DO_NOT_TRACK=1 sh`,
 			)
 			.runCmd(`curl -fsSL https://app.primeintellect.ai/prime-agent/install.sh | PRIME_AGENT_VERSION=${PINS.primeAgent} sh`)
+			// Hermes from its own installer at the pinned release tag, with its defaults; --non-interactive only skips the
+			// stages that wait for a person (a build has nobody at the terminal).
+			.runCmd(
+				`curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/v${PINS.hermes}/scripts/install.sh | bash -s -- --branch v${PINS.hermes} --non-interactive`,
+			)
 			.runCmd(
 				`export PATH=${RUN_PATH}; ` +
 					"echo relay $(relay --version | tail -1); echo prime-agent $(prime-agent --version 2>&1 | tail -1); " +
-					"echo claude $(claude --version); echo node $(node --version); echo $(python3 --version)",
+					"echo claude $(claude --version); echo hermes $(hermes --version 2>&1 | head -1); echo node $(node --version); echo $(python3 --version)",
 			)
 	);
 }
