@@ -5,14 +5,24 @@
 // default settings are on the record. Nothing else is recorded: no prompts, no outputs, no keys.
 //
 //   node meter/meter.mjs --port 8787 --upstream https://api.anthropic.com --log usage.jsonl [--cap-usd 10]
+//   node meter/meter.mjs --port 443 --tls-cert meter.crt --tls-key meter.key --resolve-upstream-by-dns ...
 //
 // With --cap-usd, the meter is also the round's one spend limit, the same for every tool: once the priced cost of a run
 // reaches the cap, every further model request is answered 429 with error type "spend_cap_reached" and not forwarded.
 //
-// Tools point at http://127.0.0.1:8787 (Claude Code: ANTHROPIC_BASE_URL; Relay and Prime Agent: models.json baseUrl).
-// Streaming responses are passed through as they arrive and parsed on the side.
-import { appendFileSync } from "node:fs";
-import { createServer } from "node:http";
+// In the benchmark no tool's endpoint setting is changed, because some tools turn features off when it is (Claude Code
+// with a custom ANTHROPIC_BASE_URL; Hermes drops the model's thinking for any endpoint not on anthropic.com). Instead the
+// sandbox's hosts file sends api.anthropic.com to 127.0.0.1, where the meter answers on 443 with a certificate from a CA
+// made for that one run and trusted only inside that sandbox. --resolve-upstream-by-dns makes the meter find the real
+// provider through DNS, past the hosts file. --plain-port also serves plain HTTP on 127.0.0.1, from the same process,
+// so one log and one spend cap cover it: for a tool that trusts only its own built-in certificate list (Prime Agent
+// 0.10.0), which therefore reaches the meter by its endpoint setting instead. Streaming responses are passed through as
+// they arrive and parsed on the side.
+import { Resolver } from "node:dns";
+import { appendFileSync, readFileSync } from "node:fs";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
+import { createServer as createHttpsServer, request as httpsRequest } from "node:https";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 import { parseArgs } from "node:util";
 
 const { values } = parseArgs({
@@ -21,6 +31,11 @@ const { values } = parseArgs({
 		upstream: { type: "string", default: "https://api.anthropic.com" },
 		log: { type: "string", default: "usage.jsonl" },
 		"cap-usd": { type: "string" },
+		host: { type: "string", default: "127.0.0.1" },
+		"tls-cert": { type: "string" },
+		"tls-key": { type: "string" },
+		"resolve-upstream-by-dns": { type: "boolean", default: false },
+		"plain-port": { type: "string" },
 	},
 });
 
@@ -57,6 +72,46 @@ const capUsd = values["cap-usd"] === undefined ? undefined : Number(values["cap-
 let spentUsd = 0;
 const upstream = new URL(values.upstream);
 const HOP_BY_HOP = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "host", "content-length"]);
+
+// c-ares asks the DNS servers directly and never reads the hosts file, which points the provider's name at the meter.
+const resolver = new Resolver();
+function lookupByDns(hostname, options, callback) {
+	resolver.resolve4(hostname, (error, addresses) => {
+		if (error) return callback(error);
+		if (options?.all) return callback(null, addresses.map((address) => ({ address, family: 4 })));
+		callback(null, addresses[0], 4);
+	});
+}
+
+/** Forwards one request to the provider and resolves with the provider's response stream. */
+function forward(method, target, headers, body) {
+	return new Promise((resolve, reject) => {
+		const send = target.protocol === "https:" ? httpsRequest : httpRequest;
+		const request = send(
+			target,
+			{
+				method,
+				headers: body ? { ...headers, "content-length": String(body.length) } : headers,
+				...(values["resolve-upstream-by-dns"] ? { lookup: lookupByDns } : {}),
+			},
+			resolve,
+		);
+		request.on("error", reject);
+		request.end(body);
+	});
+}
+
+/** The response text for parsing token counts, whatever encoding the provider chose. */
+function decodeBody(raw, encoding) {
+	try {
+		if (encoding === "gzip") return gunzipSync(raw).toString("utf8");
+		if (encoding === "br") return brotliDecompressSync(raw).toString("utf8");
+		if (encoding === "deflate") return inflateSync(raw).toString("utf8");
+	} catch {
+		return "";
+	}
+	return raw.toString("utf8");
+}
 
 /** Token counts from one Anthropic Messages response, streamed (SSE) or not. */
 export function usageFromAnthropic(body, contentType) {
@@ -99,7 +154,7 @@ function log(entry) {
 	appendFileSync(values.log, `${JSON.stringify(entry)}\n`);
 }
 
-const server = createServer(async (req, res) => {
+async function handle(req, res) {
 	const started = Date.now();
 	if (capUsd !== undefined && spentUsd >= capUsd && req.method === "POST") {
 		for await (const _ of req) {}
@@ -117,32 +172,27 @@ const server = createServer(async (req, res) => {
 	const target = new URL(req.url, upstream);
 	let response;
 	try {
-		response = await fetch(target, {
-			method: req.method,
-			headers,
-			body: chunks.length ? Buffer.concat(chunks) : undefined,
-		});
+		response = await forward(req.method, target, headers, chunks.length ? Buffer.concat(chunks) : undefined);
 	} catch (error) {
 		log({ ts: new Date().toISOString(), path: target.pathname, status: 0, error: String(error).slice(0, 200), ms: Date.now() - started });
 		res.writeHead(502, { "content-type": "application/json" });
 		res.end(JSON.stringify({ type: "error", error: { type: "meter_upstream_unreachable", message: "The cost meter could not reach the provider." } }));
 		return;
 	}
+	// The response goes back byte for byte, in the provider's own encoding, and is decoded only for the log.
 	const outHeaders = {};
-	response.headers.forEach((value, name) => {
-		if (!HOP_BY_HOP.has(name) && name !== "content-encoding") outHeaders[name] = value;
-	});
-	res.writeHead(response.status, outHeaders);
-	const contentType = response.headers.get("content-type") ?? "";
-	const decoder = new TextDecoder();
-	let text = "";
-	if (response.body) {
-		for await (const chunk of response.body) {
-			res.write(chunk);
-			text += decoder.decode(chunk, { stream: true });
-		}
+	for (const [name, value] of Object.entries(response.headers)) {
+		if (!HOP_BY_HOP.has(name)) outHeaders[name] = value;
+	}
+	res.writeHead(response.statusCode, outHeaders);
+	const contentType = response.headers["content-type"] ?? "";
+	const raw = [];
+	for await (const chunk of response) {
+		res.write(chunk);
+		raw.push(chunk);
 	}
 	res.end();
+	const text = decodeBody(Buffer.concat(raw), response.headers["content-encoding"]);
 	const metered = req.method === "POST" && target.pathname.endsWith("/messages");
 	const usage = metered ? usageFromAnthropic(text, contentType) : undefined;
 	let asked;
@@ -157,16 +207,33 @@ const server = createServer(async (req, res) => {
 	log({
 		ts: new Date().toISOString(),
 		path: target.pathname,
-		status: response.status,
+		status: response.statusCode,
 		ms: Date.now() - started,
 		...(asked ?? {}),
 		...(usage ?? {}),
 		...(cost === undefined ? {} : { costUsd: cost, spentUsd }),
 	});
+}
+
+const server =
+	values["tls-cert"] && values["tls-key"]
+		? createHttpsServer({ cert: readFileSync(values["tls-cert"]), key: readFileSync(values["tls-key"]) }, handle)
+		: createHttpServer(handle);
+// A client that refuses the certificate or speaks something else never reaches handle(); say so, for whoever debugs a run.
+server.on("tlsClientError", (error) => process.stderr.write(`tls client error: ${error.code ?? ""} ${error.message}\n`));
+server.on("clientError", (error, socket) => {
+	process.stderr.write(`client error: ${error.code ?? ""} ${error.message}\n`);
+	socket.destroy();
 });
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-	server.listen(Number(values.port), "127.0.0.1", () => {
-		process.stdout.write(`meter listening on 127.0.0.1:${values.port} -> ${upstream.origin}, log ${values.log}\n`);
+	server.listen(Number(values.port), values.host, () => {
+		const scheme = values["tls-cert"] ? "https" : "http";
+		process.stdout.write(`meter listening on ${scheme}://${values.host}:${values.port} -> ${upstream.origin}, log ${values.log}\n`);
 	});
+	if (values["plain-port"]) {
+		createHttpServer(handle).listen(Number(values["plain-port"]), "127.0.0.1", () => {
+			process.stdout.write(`meter also listening on http://127.0.0.1:${values["plain-port"]}\n`);
+		});
+	}
 }

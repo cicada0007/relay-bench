@@ -1,7 +1,10 @@
 // How each tool runs, unattended, inside a benchmark sandbox: its config files, its command, and how its own claim of
-// being done is read. Every tool sends its model traffic through the meter on 127.0.0.1:8787 and gets the same model,
-// time limit and spend cap (enforced by the meter). Settings not named here are the tool's defaults.
-export const METER_URL = "http://127.0.0.1:8787";
+// being done is read. Every tool gets the same model, time limit and spend cap (enforced by the meter). No tool's
+// endpoint is changed: the meter answers at api.anthropic.com inside the sandbox (sandbox/meter-intercept.sh).
+// Settings not named here are the tool's defaults.
+
+/** The meter's plain-HTTP door, for Prime Agent only (see its arm). Same process, log and spend cap as the main one. */
+export const METER_PLAIN_URL = "http://127.0.0.1:8787";
 export const WORK = "/home/user/work";
 export const REQUEST = "/home/user/request.md";
 
@@ -10,14 +13,13 @@ const quote = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 export const ARMS = {
 	relay: {
 		label: "Relay",
-		/** Relay through its queue, one model on every tier, model traffic through the meter. */
+		/** Relay through its queue, one model on every tier. */
 		files: ({ model }) => ({
 			"/home/user/.relay/agent/settings.json": JSON.stringify({
 				defaultProvider: "anthropic",
 				defaultModel: model,
 				models: { tiers: { decider: `anthropic/${model}`, strong: `anthropic/${model}`, fast: `anthropic/${model}` } },
 			}),
-			"/home/user/.relay/agent/models.json": JSON.stringify({ providers: { anthropic: { baseUrl: METER_URL } } }),
 		}),
 		command: ({ capUsd }) =>
 			`relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
@@ -30,9 +32,13 @@ export const ARMS = {
 		/** Prime Agent's documented unattended mode, gated on the task's own checks. Its turn, token, continuation and
 		 *  time limits are raised to the round's shared limits so its defaults (12 turns, 80,000 tokens, 30 minutes)
 		 *  do not stop a 3-hour request early; the meter's spend cap is the limit that binds, as for every tool. */
+		/** Prime Agent 0.10.0 trusts only its built-in certificate list (system and extra authorities arrived after it, in
+		 *  PrimeIntellect-ai/prime-agent#3477), so it cannot reach the meter at api.anthropic.com. It uses its endpoint
+		 *  setting instead; at v0.10.0 that setting only builds the request URL (crates/pa-ai/src/providers/anthropic/
+		 *  stream.rs), so its behaviour does not change. */
 		files: ({ model }) => ({
 			"/home/user/.prime/agent/settings.json": JSON.stringify({ defaultProvider: "anthropic", defaultModel: model }),
-			"/home/user/.prime/agent/models.json": JSON.stringify({ providers: { anthropic: { baseUrl: METER_URL } } }),
+			"/home/user/.prime/agent/models.json": JSON.stringify({ providers: { anthropic: { baseUrl: METER_PLAIN_URL } } }),
 		}),
 		command: ({ model, gates, limitMinutes }) =>
 			[
@@ -54,7 +60,6 @@ export const ARMS = {
 		command: ({ model }) =>
 			`claude -p "$(cat ${REQUEST})" --model ${model} --output-format json --dangerously-skip-permissions`,
 		env: ({ model }) => ({
-			ANTHROPIC_BASE_URL: METER_URL,
 			ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
 			ANTHROPIC_DEFAULT_SONNET_MODEL: model,
 			ANTHROPIC_DEFAULT_OPUS_MODEL: model,

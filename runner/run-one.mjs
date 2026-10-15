@@ -47,6 +47,15 @@ mkdirSync(runDir, { recursive: true });
 const tar = (dir) => execFileSync("tar", ["-czf", "-", "--exclude", ".DS_Store", "--exclude", "node_modules", "-C", dir, "."], { maxBuffer: 256 * 1024 * 1024 });
 const sha = (data) => createHash("sha256").update(data).digest("hex");
 const BASE_ENV = { DO_NOT_TRACK: "1", PATH: RUN_PATH, HOME: "/home/user", TERM: "dumb", CI: "1" };
+/** Where each runtime looks for trusted certificates; with the run's authority added (sandbox/meter-intercept.sh), every
+ *  tool reaches the meter at api.anthropic.com as if it were the provider. Node reads NODE_EXTRA_CA_CERTS; Python's
+ *  ssl, httpx and requests read the system bundle through these two. */
+const TRUST_ENV = {
+	NODE_EXTRA_CA_CERTS: "/usr/local/share/ca-certificates/relay-bench-meter.crt",
+	SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt",
+	REQUESTS_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt",
+};
+const METER_DIR = "/var/lib/relay-bench";
 
 async function sh(sandbox, command, options = {}) {
 	try {
@@ -55,7 +64,7 @@ async function sh(sandbox, command, options = {}) {
 		return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr };
 	} catch (error) {
 		// A non-zero exit is thrown as a CommandExitError carrying the result; a timeout carries no exit code.
-		return { exitCode: error.exitCode ?? null, stdout: error.stdout ?? "", stderr: error.stderr ?? String(error.message ?? error), error: error.name };
+		return { exitCode: error.exitCode ?? null, stdout: error.stdout ?? "", stderr: error.stderr || String(error.message ?? error), error: error.name };
 	}
 }
 
@@ -88,7 +97,8 @@ try {
 	// The meter is uploaded from this checkout on every run, so the image can never hold a stale copy.
 	const meterSource = readFileSync(join(ROOT, "meter", "meter.mjs"), "utf8");
 	record.meterSha256 = sha(meterSource);
-	await work.files.write("/home/user/meter.mjs", meterSource);
+	await work.files.write("/opt/relay-bench/meter.mjs", meterSource, { user: "root" });
+	await work.files.write("/opt/relay-bench/meter-intercept.sh", readFileSync(join(ROOT, "sandbox", "meter-intercept.sh"), "utf8"), { user: "root" });
 	const setup = await sh(
 		work,
 		`mkdir -p ${WORK} && tar -xzf /home/user/repo.tgz -C ${WORK} && cd ${WORK} && ` +
@@ -98,13 +108,24 @@ try {
 	if (setup.exitCode !== 0) throw new Error(`setup failed: ${setup.stderr.slice(-400)}`);
 	for (const [path, content] of Object.entries(arm.files({ model: args.model }))) await work.files.write(path, content);
 
-	const meterLog = "/home/user/meter.jsonl";
-	await work.commands.run(`node /home/user/meter.mjs --port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]} > /home/user/meter.out 2>&1`, {
-		background: true,
-		envs: BASE_ENV,
-	});
-	const up = await sh(work, "for i in $(seq 1 50); do curl -s -o /dev/null http://127.0.0.1:8787/ && exit 0; sleep 0.1; done; cat /home/user/meter.out; exit 1");
+	// The meter runs as root at api.anthropic.com inside this sandbox, so no tool's endpoint setting changes, and its
+	// log sits in a root-owned folder the tool can read but not rewrite.
+	const intercept = await sh(work, "sh /opt/relay-bench/meter-intercept.sh", { user: "root" });
+	if (intercept.exitCode !== 0) throw new Error(`the meter's certificate setup failed: ${intercept.stderr.slice(-400)}`);
+	const meterLog = `${METER_DIR}/meter.jsonl`;
+	await work.commands.run(
+		`export PATH=${RUN_PATH}; node /opt/relay-bench/meter.mjs --port 443 --tls-cert /root/meter-tls/meter.crt ` +
+			`--tls-key /root/meter-tls/meter.key --upstream https://api.anthropic.com --resolve-upstream-by-dns ` +
+			`--plain-port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]} > ${METER_DIR}/meter.out 2>&1`,
+		{ background: true, envs: BASE_ENV, user: "root" },
+	);
+	// Checked the way the tools will see it: as the sandbox user, by name, through the hosts file and the run's certificate.
+	const up = await sh(
+		work,
+		`for i in $(seq 1 50); do curl -s -o /dev/null https://api.anthropic.com/ && exit 0; sleep 0.1; done; cat ${METER_DIR}/meter.out; exit 1`,
+	);
 	if (up.exitCode !== 0) throw new Error(`the meter did not start: ${up.stdout.slice(-400)}`);
+	record.meterMode = "intercept";
 
 	const command = arm.command({ model: args.model, gates: task.gates, limitMinutes: task.timeLimitMinutes, capUsd: args["cap-usd"] });
 	record.command = command;
@@ -112,7 +133,7 @@ try {
 	const run = await sh(work, command, {
 		cwd: WORK,
 		timeoutMs: task.timeLimitMinutes * 60_000,
-		envs: { ...BASE_ENV, ...arm.env({ model: args.model }), ANTHROPIC_API_KEY: key },
+		envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ANTHROPIC_API_KEY: key },
 	});
 	record.wallMs = Date.now() - toolStarted;
 	record.exitCode = run.exitCode;

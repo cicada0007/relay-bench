@@ -94,3 +94,51 @@ test("refuses model requests once the run's spend cap is reached", async () => {
 		provider.close();
 	}
 });
+
+test("serves HTTPS with the run's certificate and passes compressed responses through unchanged", async () => {
+	const { execFileSync } = await import("node:child_process");
+	const { gzipSync, gunzipSync } = await import("node:zlib");
+	const { request } = await import("node:https");
+	const dir = mkdtempSync(join(tmpdir(), "meter-tls-"));
+	execFileSync("openssl", [
+		"req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost",
+		"-addext", "subjectAltName=DNS:localhost", "-keyout", join(dir, "key.pem"), "-out", join(dir, "cert.pem"),
+	], { stdio: "ignore" });
+	const provider = createServer((req, res) => {
+		req.resume();
+		req.on("end", () => {
+			res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip" });
+			res.end(gzipSync(JSON.stringify({ model: "claude-sonnet-5-5", content: [{ type: "text", text: "ok" }], usage: { input_tokens: 7, output_tokens: 3 } })));
+		});
+	});
+	await new Promise((r) => provider.listen(0, "127.0.0.1", r));
+	const log = join(dir, "usage.jsonl");
+	const port = String(20000 + Math.floor(Math.random() * 20000));
+	const meter = spawn(process.execPath, [
+		join(here, "meter.mjs"), "--port", port, "--upstream", `http://127.0.0.1:${provider.address().port}`, "--log", log,
+		"--tls-cert", join(dir, "cert.pem"), "--tls-key", join(dir, "key.pem"),
+	], { stdio: ["ignore", "pipe", "inherit"] });
+	await new Promise((resolve) => meter.stdout.once("data", resolve));
+	try {
+		const reply = await new Promise((resolve, reject) => {
+			const req = request(
+				{ host: "127.0.0.1", servername: "localhost", port, path: "/v1/messages", method: "POST", ca: readFileSync(join(dir, "cert.pem")), headers: { "content-type": "application/json" } },
+				(res) => {
+					const parts = [];
+					res.on("data", (c) => parts.push(c));
+					res.on("end", () => resolve({ encoding: res.headers["content-encoding"], body: Buffer.concat(parts) }));
+				},
+			);
+			req.on("error", reject);
+			req.end(JSON.stringify({ model: "claude-sonnet-5-5" }));
+		});
+		assert.equal(reply.encoding, "gzip");
+		assert.equal(JSON.parse(gunzipSync(reply.body)).content[0].text, "ok");
+		await new Promise((r) => setTimeout(r, 100));
+		const line = JSON.parse(readFileSync(log, "utf8").trim());
+		assert.deepEqual([line.model, line.input, line.output], ["claude-sonnet-5-5", 7, 3]);
+	} finally {
+		meter.kill();
+		provider.close();
+	}
+});

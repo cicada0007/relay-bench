@@ -132,5 +132,12 @@ behaviours; a reference solution of at least 2,000 changed lines; 6 to 15 judge 
 - The first-draft requests are not used in any counted test. The pilot's three records stay in the published data,
   labelled as the pilot.
 - "Checks passed" is added as a secondary measure. The primary measure and every word rule are unchanged.
+- No tool's endpoint setting is changed to meter it. Claude Code turns some features off when its endpoint is changed
+  (its own messages say they are "not available with a custom ANTHROPIC_BASE_URL"), and Hermes drops the model's
+  thinking for any endpoint not on anthropic.com. So inside each run's container, api.anthropic.com resolves to the
+  meter, which answers with a certificate from an authority made for that one run (its signing key is deleted at
+  once) and forwards every request unchanged. Prime Agent 0.10.0 trusts only its built-in certificate list, so it alone
+  reaches the meter through its endpoint setting, which in that version only builds the request URL. The pilot's runs
+  used endpoint settings for every tool.
 - Runs per task, the model and the budget for test A are set from the cost of a pilot on the larger requests. If test A
   cannot run in full within its budget, the decision goes back to the founders, as the section above says.
