@@ -141,3 +141,36 @@ behaviours; a reference solution of at least 2,000 changed lines; 6 to 15 judge 
   used endpoint settings for every tool.
 - Runs per task, the model and the budget for test A are set from the cost of a pilot on the larger requests. If test A
   cannot run in full within its budget, the decision goes back to the founders, as the section above says.
+
+### 2. What the large pilot changed (16 October 2026, before any counted run)
+
+The pilot ran the first two larger long requests (node-spreadsheet, py-mini-sql) on Sonnet 5.5 and, for cost, on
+Haiku 5.5. Every change below applies before any counted run; the pilot's records stay in the published data.
+
+- **Relay was fixed before the round.** Relay 0.6.117 met 1 of 6 parts on one request and 0 on the other, where Claude
+  Code and Prime Agent met all 6 on both. The pilot showed four defects in Relay, all generic: a planned task's agent
+  saw only the planner's short brief, never the request; the planner could leave parts of a request out; reviews cut a
+  request at 12,000 characters; and setup did not read the README for the test command, so on one repository it ran
+  nothing. They are fixed in Relay 0.6.118 (relay-harness pull request 195), which the round pins. A build of that fix
+  met 6 of 6 on the request where 0.6.117 met none. Nothing in the fix is specific to any task, and the two pilot tasks
+  are marked on the results page as the tasks the defects were found on.
+- **Prime Agent is told the test models.** Prime Agent 0.10.0's built-in model list stops at Sonnet 5 and Haiku 4.5;
+  for a model it does not know it falls back to 4,096 output tokens and no thinking. Its models.json declares the test
+  model with Anthropic's limits, as a user adopting a new model would. On Sonnet 5.5 it then asks for adaptive thinking
+  at medium effort, as Claude Code does. On Haiku 5.5 it runs without thinking, because 0.10.0 sends that model an older
+  thinking format the API refuses; the results page says so.
+- **The budget is re-split within $400**, decided by the founders on 16 October: on large requests Haiku 5.5 costs about
+  as much as Sonnet 5.5 (its long-context price applies above 100,000 tokens), so test B as written would cost about
+  $230, not $60.
+
+  | Test | Change | Cap |
+  | --- | --- | --- |
+  | Pilot | spent | $19.52 |
+  | A | unchanged: 12 long requests, 3 runs each, Sonnet 5.5 | $190 |
+  | B | the 12 everyday changes run 3 times each; the 12 long requests run once each | $80 |
+  | D | one long request, 3 faults, 2 runs each | $25 |
+  | F | unchanged | $45 |
+  | G | unchanged | $25 |
+  | E | runs only if money is left after the tests above | rest |
+
+  Test A is unchanged and unshrunk. Every cut is listed on the results page.
