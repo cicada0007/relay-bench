@@ -166,6 +166,9 @@ try {
 	await sh(work, `tar -czf /home/user/result.tgz --exclude=.git --exclude=node_modules -C ${resultDir} .`);
 	resultTar = Buffer.from(await work.files.read("/home/user/result.tgz", { format: "bytes" }));
 	record.resultSha256 = sha(resultTar);
+	// The exact tree the judge grades, kept so any later judge fix can re-grade every tool's run the same way
+	// (runner/rejudge.mjs).
+	writeFileSync(join(runDir, "result.tgz"), resultTar);
 
 	const meter = await work.files.read(meterLog).catch(() => "");
 	writeFileSync(join(runDir, "meter.jsonl"), meter);
@@ -192,7 +195,9 @@ const judgeBox = await Sandbox.create(TEMPLATE_NAME, { timeoutMs: 30 * 60_000, m
 record.judgeSandbox = judgeBox.sandboxId;
 try {
 	await judgeBox.files.write("/home/user/result.tgz", resultTar);
-	await judgeBox.files.write("/home/user/judge.tgz", tar(join(taskDir, "judge")));
+	const judgeTar = tar(join(taskDir, "judge"));
+	record.judgeSha256 = sha(judgeTar);
+	await judgeBox.files.write("/home/user/judge.tgz", judgeTar);
 	const prep = await sh(
 		judgeBox,
 		"mkdir -p /home/user/checkout /home/user/judge && tar -xzf /home/user/result.tgz -C /home/user/checkout && " +

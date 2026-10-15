@@ -6,7 +6,7 @@
 // - The word comes from the interval only: much better (> +15 points), better (> 0), no clear difference, worse (< 0).
 //
 //   node runner/analyze.mjs --out runs/round-1 --test A [--json]
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -106,6 +106,19 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		.filter(Boolean)
 		.map((l) => JSON.parse(l))
 		.filter((r) => r.test === args.test);
+	// A run graded again after a judge fix (rejudge.mjs) counts with its latest grade.
+	const rejudgedPath = join(ROOT, args.out, "rejudged.jsonl");
+	if (existsSync(rejudgedPath)) {
+		const latest = new Map();
+		for (const line of readFileSync(rejudgedPath, "utf8").split("\n").filter(Boolean)) {
+			const g = JSON.parse(line);
+			latest.set(g.runId, g);
+		}
+		for (const r of records) {
+			const g = latest.get(r.runId);
+			if (g) Object.assign(r, { judge: g.judge, score: g.score, saidDoneButFailed: g.saidDoneButFailed, rejudgedAt: g.rejudgedAt });
+		}
+	}
 	const result = analyze(records);
 	if (args.json) {
 		console.log(JSON.stringify(result, null, 2));

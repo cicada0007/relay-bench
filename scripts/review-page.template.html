@@ -1,0 +1,346 @@
+<title>Benchmark Task Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a reviewer's desk. Task list on the left; the open task reads part by part, the request on the left
+   page and the judge's checks on the right, with the verdict under each pair. */
+:root {
+	--bg: #f3f5f8;
+	--surface: #ffffff;
+	--sunk: #eef1f5;
+	--fg: #171a20;
+	--muted: #5a6170;
+	--line: #d9dee6;
+	--accent: #2453c2;
+	--accent-soft: #e4ebfa;
+	--fair: #1d7348;
+	--fair-soft: #e2f3e9;
+	--unclear: #9a5d00;
+	--unclear-soft: #fbefd9;
+	--unfair: #b0302a;
+	--unfair-soft: #fbe3e1;
+	--font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #101318; --surface: #171b22; --sunk: #1d222b; --fg: #e5e8ee; --muted: #9aa2b2; --line: #2a303b;
+		--accent: #84a7ff; --accent-soft: #1d2a47; --fair: #56c58d; --fair-soft: #15301f; --unclear: #f0b44b;
+		--unclear-soft: #352812; --unfair: #f2766d; --unfair-soft: #3a1a18; color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #101318; --surface: #171b22; --sunk: #1d222b; --fg: #e5e8ee; --muted: #9aa2b2; --line: #2a303b;
+	--accent: #84a7ff; --accent-soft: #1d2a47; --fair: #56c58d; --fair-soft: #15301f; --unclear: #f0b44b;
+	--unclear-soft: #352812; --unfair: #f2766d; --unfair-soft: #3a1a18; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.app { padding-inline: 16px; padding-block: 20px 64px; max-width: 1480px; margin: 0 auto; }
+code, kbd, pre, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.2; margin: 0; }
+.top { display: grid; gap: 10px; margin-bottom: 20px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+.lede { margin: 0; max-width: 72ch; color: var(--muted); }
+.summary { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; font-variant-numeric: tabular-nums; }
+.summary b { font-size: 18px; }
+.status { font-size: 13px; color: var(--muted); }
+.status.warn { color: var(--unclear); }
+.layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 20px; align-items: start; }
+.tasks { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); display: grid; gap: 6px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.task-link { display: grid; gap: 6px; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 10px 12px; cursor: pointer; font: inherit; }
+.task-link:hover { border-color: var(--accent); }
+.task-link[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.task-link:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-link .name { font-weight: 600; font-size: 14px; }
+.task-link .id { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.dots { display: flex; gap: 4px; align-items: center; }
+.dot { width: 22px; height: 16px; border-radius: 4px; background: var(--sunk); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 9px; display: grid; place-items: center; color: var(--muted); }
+.dot.fair { background: var(--fair-soft); border-color: var(--fair); color: var(--fair); }
+.dot.unclear { background: var(--unclear-soft); border-color: var(--unclear); color: var(--unclear); }
+.dot.unfair { background: var(--unfair-soft); border-color: var(--unfair); color: var(--unfair); }
+main { min-width: 0; display: grid; gap: 18px; }
+.task-head { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; display: grid; gap: 10px; }
+.task-head h2 { font-size: 22px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip.warn { color: var(--unclear); border-color: var(--unclear); }
+.intro, .outro { max-width: 80ch; }
+.part { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.part[data-verdict="fair"] { border-color: var(--fair); }
+.part[data-verdict="unclear"] { border-color: var(--unclear); }
+.part[data-verdict="unfair"] { border-color: var(--unfair); }
+.part-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.part-head .tag { font-family: var(--font-mono); font-weight: 500; color: var(--accent); }
+.part-head h3 { font-size: 17px; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.col { padding: 4px 20px 14px; min-width: 0; }
+.col + .col { border-left: 1px solid var(--line); background: var(--sunk); }
+.col-label { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 12px 0 4px; }
+.md { overflow-wrap: anywhere; }
+.md p { margin: 0.5em 0; }
+.md ul, .md ol { padding-left: 1.3em; margin: 0.4em 0; }
+.md li { margin: 0.2em 0; }
+.md pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+.col + .col .md pre { background: var(--surface); }
+.md code { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
+.md pre code { background: none; padding: 0; }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.verdict { display: grid; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line); }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { font: inherit; font-size: 14px; font-weight: 600; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 7px 14px; cursor: pointer; }
+.choice:hover:not(:disabled) { border-color: var(--accent); }
+.choice:active:not(:disabled) { transform: translateY(1px); }
+.choice:disabled { opacity: 0.55; cursor: not-allowed; }
+.choice[data-v="fair"][aria-pressed="true"] { background: var(--fair-soft); border-color: var(--fair); color: var(--fair); }
+.choice[data-v="unclear"][aria-pressed="true"] { background: var(--unclear-soft); border-color: var(--unclear); color: var(--unclear); }
+.choice[data-v="unfair"][aria-pressed="true"] { background: var(--unfair-soft); border-color: var(--unfair); color: var(--unfair); }
+textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-size: 14px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.saved { font-size: 12px; color: var(--muted); min-height: 1em; }
+.empty { color: var(--muted); font-style: italic; }
+@media (max-width: 1100px) { .pair { grid-template-columns: minmax(0, 1fr); } .col + .col { border-left: 0; border-top: 1px solid var(--line); } }
+@media (max-width: 860px) {
+	.layout { grid-template-columns: minmax(0, 1fr); }
+	.tasks { position: static; max-height: none; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); overflow-x: auto; padding-bottom: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+	<header class="top">
+		<div class="eyebrow">relay-bench · round 1 · tests A and B</div>
+		<h1>Task review</h1>
+		<p class="lede">Read each request beside the checks its hidden judge runs, then mark every part. "Clear and fair" means a careful developer reading only the request would build what the checks expect. Counted runs start once every part of every task is marked clear and fair; anything else comes back to Claude to fix, for every tool alike.</p>
+		<div class="summary" id="summary"></div>
+		<div class="status" id="status">Connecting to saved verdicts…</div>
+	</header>
+	<div class="layout">
+		<nav class="tasks" id="tasklist" aria-label="Tasks"></nav>
+		<main id="task"></main>
+	</div>
+</div>
+
+<script type="application/json" id="review-data">__REVIEW_DATA__</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script>
+(() => {
+	const DATA = JSON.parse(document.getElementById("review-data").textContent);
+	const PARTS = ["R1", "R2", "R3", "R4", "R5", "R6", "R0"];
+	const LABELS = { fair: "Clear and fair", unclear: "Unclear", unfair: "Unfair" };
+	const verdicts = new Map(); // "task__part" -> {verdict, note, at}
+	let db = null;
+	let uid = null;
+	let canWrite = true;
+	let current = DATA.tasks[0]?.id;
+	const pending = new Map(); // one write at a time per document
+
+	const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+	const md = (text) => {
+		if (!text) return "";
+		try {
+			if (window.marked) return window.marked.parse(text, { gfm: true });
+		} catch {}
+		return `<pre>${esc(text)}</pre>`;
+	};
+	const key = (task, part) => `${task}__${part}`;
+
+	function summary() {
+		let done = 0;
+		let flagged = 0;
+		let marked = 0;
+		const total = DATA.tasks.length * PARTS.length;
+		for (const t of DATA.tasks) {
+			let fair = 0;
+			for (const p of PARTS) {
+				const v = verdicts.get(key(t.id, p))?.verdict;
+				if (v) marked++;
+				if (v === "fair") fair++;
+				if (v === "unclear" || v === "unfair") flagged++;
+			}
+			if (fair === PARTS.length) done++;
+		}
+		document.getElementById("summary").innerHTML =
+			`<span><b>${done}</b> of ${DATA.tasks.length} tasks ready</span>` +
+			`<span><b>${marked}</b> of ${total} parts marked</span>` +
+			`<span><b>${flagged}</b> flagged</span>`;
+	}
+
+	function renderList() {
+		const nav = document.getElementById("tasklist");
+		nav.innerHTML = DATA.tasks
+			.map((t) => {
+				const dots = PARTS.map((p) => {
+					const v = verdicts.get(key(t.id, p))?.verdict || "";
+					return `<span class="dot ${v}" title="${p}: ${v ? LABELS[v] : "not marked"}">${p}</span>`;
+				}).join("");
+				return `<button class="task-link" data-task="${esc(t.id)}" aria-current="${t.id === current}">
+					<span class="name">${esc(t.title)}</span><span class="id">${esc(t.id)}</span><span class="dots">${dots}</span></button>`;
+			})
+			.join("");
+	}
+
+	function partBlock(t, p) {
+		const n = Number(p.slice(1));
+		const asks = p === "R0"
+			? `<p>Nothing that worked before the request may break. The judge runs the starting repository's own tests from a hidden copy, plus the behaviours below. A part only counts while this holds.</p>`
+			: md(t.request.parts[n - 1] || "") || `<p class="empty">This part was not found in request.md.</p>`;
+		const title = t.checks?.titles?.[p] || (p === "R0" ? "what worked before still works" : `part ${n}`);
+		const checks = t.checks ? md(t.checks.parts[p] || "") || `<p class="empty">No checks listed for ${p}.</p>` : `<p class="empty">This task has no CHECKS.md yet.</p>`;
+		const count = t.stats.checks[p];
+		return `<section class="part" id="part-${p}" data-part="${p}">
+			<div class="part-head"><span class="tag">${p}</span><h3>${esc(title)}</h3></div>
+			<div class="pair">
+				<div class="col"><div class="col-label">${p === "R0" ? "The rule" : "What the request asks"}</div><div class="md">${asks}</div></div>
+				<div class="col"><div class="col-label">What the judge checks${count ? ` (${count})` : ""}</div><div class="md">${checks}</div></div>
+			</div>
+			<div class="verdict">
+				<div class="choices" role="group" aria-label="Verdict for ${p}">
+					${Object.entries(LABELS).map(([v, label]) => `<button class="choice" data-v="${v}" aria-pressed="false">${label}</button>`).join("")}
+				</div>
+				<textarea id="note-${esc(t.id)}-${p}" placeholder="What is unclear or unfair? Name the sentence or check (for example ${p === "R0" ? "R0.2" : p + ".3"})."></textarea>
+				<div class="saved" aria-live="polite"></div>
+			</div>
+		</section>`;
+	}
+
+	function renderTask() {
+		const t = DATA.tasks.find((x) => x.id === current);
+		const main = document.getElementById("task");
+		if (!t) {
+			main.innerHTML = `<p class="empty">No tasks are built yet.</p>`;
+			return;
+		}
+		const s = t.stats;
+		const checkTotal = Object.entries(s.checks).filter(([p]) => p !== "R0").reduce((a, [, c]) => a + c, 0);
+		main.innerHTML = `
+			<div class="task-head">
+				<div class="eyebrow mono">${esc(t.id)}${t.private ? " · private holdout" : ""}</div>
+				<h2>${esc(t.title)}</h2>
+				<div class="chips">
+					<span class="chip">${esc(t.stack.join(", "))}</span>
+					<span class="chip">${s.sourceLines.toLocaleString()} lines of source</span>
+					<span class="chip">${s.testFiles} test files</span>
+					<span class="chip">${s.requestWords.toLocaleString()} words in the request</span>
+					${t.checks ? `<span class="chip">${checkTotal} checks across 6 parts</span>` : `<span class="chip warn">no CHECKS.md yet</span>`}
+				</div>
+				<div class="intro md">${md(t.request.intro)}</div>
+			</div>
+			${PARTS.map((p) => partBlock(t, p)).join("")}
+			<section class="part"><div class="part-head"><span class="tag">all</span><h3>Rules for every part</h3></div>
+				<div class="col"><div class="md outro">${md(t.request.outro) || '<p class="empty">None.</p>'}</div></div></section>`;
+		syncControls();
+	}
+
+	function syncControls() {
+		const t = current;
+		for (const section of document.querySelectorAll("section.part[data-part]")) {
+			const p = section.dataset.part;
+			const v = verdicts.get(key(t, p));
+			section.dataset.verdict = v?.verdict || "";
+			for (const b of section.querySelectorAll(".choice")) {
+				b.setAttribute("aria-pressed", String(v?.verdict === b.dataset.v));
+				b.disabled = !canWrite;
+			}
+			const note = section.querySelector("textarea");
+			if (document.activeElement !== note) note.value = v?.note || "";
+			note.disabled = !canWrite;
+			section.querySelector(".saved").textContent = v?.at ? `Saved ${new Date(v.at).toLocaleString()}` : "";
+		}
+	}
+
+	function save(task, part, patch) {
+		const k = key(task, part);
+		const next = { ...(verdicts.get(k) || {}), ...patch, task, part, at: new Date().toISOString() };
+		verdicts.set(k, next);
+		syncControls();
+		renderList();
+		summary();
+		if (!db) return;
+		const run = async () => {
+			try {
+				await db.doc(`verdicts/${k}`).set({ ...next, by: uid || null });
+			} catch (e) {
+				if (e?.code === "invalid_argument") {
+					canWrite = false;
+					setStatus("Your verdicts can't be saved from this view: only the owner or an editor can mark tasks.", true);
+					syncControls();
+				} else {
+					setStatus(`A verdict didn't save (${e?.code || "error"}). Mark it again in a moment.`, true);
+				}
+			}
+		};
+		const chain = (pending.get(k) || Promise.resolve()).then(run);
+		pending.set(k, chain);
+	}
+
+	function setStatus(text, warn) {
+		const el = document.getElementById("status");
+		el.textContent = text;
+		el.classList.toggle("warn", !!warn);
+	}
+
+	document.getElementById("tasklist").addEventListener("click", (e) => {
+		const b = e.target.closest(".task-link");
+		if (!b) return;
+		current = b.dataset.task;
+		try { history.replaceState(null, "", `#${current}`); } catch {}
+		renderList();
+		renderTask();
+		window.scrollTo({ top: 0 });
+	});
+	document.getElementById("task").addEventListener("click", (e) => {
+		const b = e.target.closest(".choice");
+		if (!b || b.disabled) return;
+		const part = b.closest("section.part").dataset.part;
+		const note = b.closest(".verdict").querySelector("textarea").value;
+		save(current, part, { verdict: b.dataset.v, note });
+	});
+	document.getElementById("task").addEventListener("change", (e) => {
+		if (e.target.tagName !== "TEXTAREA") return;
+		const part = e.target.closest("section.part").dataset.part;
+		const prev = verdicts.get(key(current, part));
+		if ((prev?.note || "") === e.target.value) return;
+		save(current, part, { note: e.target.value, verdict: prev?.verdict || null });
+	});
+
+	const fromHash = location.hash.slice(1);
+	if (DATA.tasks.some((t) => t.id === fromHash)) current = fromHash;
+	summary();
+	renderList();
+	renderTask();
+
+	(async () => {
+		const [dbNs, user] = await Promise.all([window.claude?.use?.("db") ?? null, window.claude?.use?.("user") ?? null]);
+		db = dbNs;
+		if (!db) {
+			setStatus("Verdicts can't be saved in this view. Open the page in Claude to mark tasks; you can still read everything here.", true);
+			return;
+		}
+		uid = user ? await user.id() : null;
+		if (user && typeof user.can === "function") {
+			const w = await user.can("data.write");
+			if (w === false) {
+				canWrite = false;
+				setStatus("You can read this review; only the owner or an editor can mark tasks.", true);
+				syncControls();
+			}
+		}
+		db.collection("verdicts").onSnapshot(
+			(snap) => {
+				for (const d of snap.docs) {
+					const body = d.data();
+					if (body?.task && body?.part) verdicts.set(key(body.task, body.part), body);
+				}
+				if (canWrite) setStatus(`Verdicts save as you mark them. Built ${new Date(DATA.builtAt).toLocaleString()}.`);
+				summary();
+				renderList();
+				syncControls();
+			},
+			(e) => setStatus(`Saved verdicts stopped updating (${e?.code || "error"}). Reload the page.`, true),
+		);
+	})();
+})();
+</script>

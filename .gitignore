@@ -2,3 +2,7 @@
 tasks/
 node_modules/
 runs/
+# The first-draft long requests (too small, amendment 1); not used in counted tests.
+tasks-draft1/
+# The task review page embeds the private tasks.
+review/
