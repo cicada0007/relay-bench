@@ -187,6 +187,13 @@ try {
 const reqs = record.judge?.requirements ?? {};
 const met = task.requirements.filter((r) => reqs[r] === true && record.judge?.R0 === true).length;
 record.score = { requirementsMet: met, requirements: task.requirements.length, share: met / task.requirements.length, R0: record.judge?.R0 === true };
+// Secondary measure: the share of the judge's individual checks passed, counted only when R0 holds, like the parts.
+const checks = Object.values(record.judge?.checks ?? {}).filter((c) => Array.isArray(c) && c.length === 2);
+if (checks.length) {
+	const total = checks.reduce((s, c) => s + c[1], 0);
+	const passed = record.score.R0 ? checks.reduce((s, c) => s + c[0], 0) : 0;
+	record.score.checks = { passed, total, share: total ? passed / total : 0 };
+}
 record.saidDoneButFailed = record.saidDone === true && met < task.requirements.length;
 record.finishedAt = new Date().toISOString();
 appendFileSync(join(out, "records.jsonl"), `${JSON.stringify(record)}\n`);

@@ -52,6 +52,8 @@ task and judge in tests A and B.
 
 - **Requirements met** (long requests): the share of a request's parts the judge passes.
 - **Solved** (everyday changes, Terminal-Bench, long-context sets): the judge passes.
+- **Checks passed** (long requests, secondary): the share of the judge's individual checks a run passes, so a part that
+  is nearly done is visible as nearly done.
 - **All runs pass:** the share of tasks where every run succeeded.
 - **Said done but failed:** runs where the tool reported success and the judge failed it.
 - **Finished with nobody** (test D): the run ended with the judge passing and no person acting.
@@ -112,3 +114,23 @@ Test A is never shrunk. If it cannot run in full, the round stops and the decisi
 
 Tasks (the private six after the round), judges, the runner, the meter, every run's record and transcript, costs,
 failures, and one command per test to re-run it.
+
+## Amendments
+
+### 1. Long requests sized for hours (15 October 2026, after the pilot, before any counted run)
+
+The pilot ran Relay, Prime Agent and Claude Code once each on one long request, on Sonnet 5.5. All three met all 6
+parts, in 2 to 8 minutes, for $0.29 to $0.93. Blind attempts on five more of the first-draft requests also met every
+part. Test A is meant to measure work of up to 3 hours with nobody watching, and a test every tool passes in minutes
+cannot separate them: every comparison would read "no clear difference".
+
+So the long requests are rebuilt larger, by rules fixed here, before any tool runs them (TASK_FORMAT.md has the detail):
+a starting repository of 3,000 to 5,000 lines with at least 60 tests; 6 parts, each with 5 to 10 precisely specified
+behaviours; a reference solution of at least 2,000 changed lines; 6 to 15 judge checks per part.
+
+- The rules apply to every task alike. No task is kept, changed or dropped because of how any one tool did on it.
+- The first-draft requests are not used in any counted test. The pilot's three records stay in the published data,
+  labelled as the pilot.
+- "Checks passed" is added as a secondary measure. The primary measure and every word rule are unchanged.
+- Runs per task, the model and the budget for test A are set from the cost of a pilot on the larger requests. If test A
+  cannot run in full within its budget, the decision goes back to the founders, as the section above says.

@@ -66,6 +66,9 @@ function analyze(records) {
 			tasks: tasks.size,
 			runs: runs.length,
 			score: 100 * mean([...tasks.values()].map((rs) => mean(rs.map((r) => r.score?.share ?? 0)))),
+			checksPassed: runs.some((r) => r.score?.checks)
+				? 100 * mean([...tasks.values()].map((rs) => mean(rs.map((r) => r.score?.checks?.share ?? 0))))
+				: null,
 			allRunsPass: 100 * mean([...tasks.values()].map((rs) => (rs.every((r) => r.score?.share === 1) ? 1 : 0))),
 			saidDoneButFailed: 100 * mean(runs.map((r) => (r.saidDoneButFailed ? 1 : 0))),
 			costUsd: runs.reduce((s, r) => s + (r.usage?.costUsd ?? 0), 0),
@@ -109,9 +112,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 	} else {
 		const f = (x, d = 1) => (x === null || x === undefined ? "–" : x.toFixed(d));
 		console.log(`Test ${args.test}: ${records.length} runs`);
-		console.log("tool          tasks runs  score  all-runs-pass  said-done-failed  cost/solved  median-min");
+		console.log("tool          tasks runs  score  checks  all-runs-pass  said-done-failed  cost/solved  median-min");
 		for (const [tool, s] of Object.entries(result.toolSummary)) {
-			console.log(`${tool.padEnd(13)} ${String(s.tasks).padStart(5)} ${String(s.runs).padStart(4)}  ${f(s.score).padStart(5)}  ${f(s.allRunsPass).padStart(13)}  ${f(s.saidDoneButFailed).padStart(16)}  ${s.costPerSolvedUsd === null ? "–" : `$${s.costPerSolvedUsd.toFixed(3)}`.padStart(11)}  ${f(s.medianMinutes).padStart(10)}`);
+			console.log(`${tool.padEnd(13)} ${String(s.tasks).padStart(5)} ${String(s.runs).padStart(4)}  ${f(s.score).padStart(5)}  ${f(s.checksPassed).padStart(6)}  ${f(s.allRunsPass).padStart(13)}  ${f(s.saidDoneButFailed).padStart(16)}  ${s.costPerSolvedUsd === null ? "–" : `$${s.costPerSolvedUsd.toFixed(3)}`.padStart(11)}  ${f(s.medianMinutes).padStart(10)}`);
 		}
 		for (const [tool, c] of Object.entries(result.comparisons)) {
 			console.log(`Relay minus ${tool}: ${f(c.difference)} points, 95% interval ${f(c.low)} to ${f(c.high)} over ${c.tasks} tasks: ${c.word}`);

@@ -39,6 +39,19 @@ part is about structure (for example "put the formatting in a pure function in `
 A long request has about 6 parts: usually 3 or 4 features, 1 bug fix in existing code, and 1 documentation or
 refactoring part. An everyday change is one part.
 
+A long request is sized for hours of work, not minutes (the first draft of 12 requests was solved completely in 2 to 8
+minutes by every tool in the pilot). Every long task meets all of these, by construction, before any tool runs it:
+
+- The starting repository has 3,000 to 5,000 lines of source code (tests not counted) in at least 12 files across at
+  least 3 modules, and at least 60 existing tests that pass.
+- Each of the 6 parts is a substantial change with 5 to 10 precisely specified behaviours and touches at least 2
+  modules. The request is about 1,500 to 2,500 words.
+- The reference solution changes at least 2,000 lines, tests included.
+- The judge checks each part with 6 to 15 checks, and a part is met only when all of its checks pass.
+
+No task is kept, changed or dropped because of how any one tool did on it. A run may show that a request can be read
+two ways; the fix is then to make the judge accept every reasonable reading, and it applies to every tool.
+
 ## The judge
 
 `node judge/judge.mjs <checkout>` runs on a clean copy of the result, in a sandbox the tool never saw. It must:
@@ -52,11 +65,14 @@ refactoring part. An everyday change is one part.
 ```json
 { "task": "py-ledger", "gates": { "test": true, "lint": false },
   "requirements": { "R1": true, "R2": false, "R3": true, "R4": true, "R5": false, "R6": true },
-  "R0": true, "notes": { "R2": "transfer to self was accepted" } }
+  "R0": true, "checks": { "R1": [9, 9], "R2": [6, 7] }, "notes": { "R2": "transfer to self was accepted" } }
 ```
 
-`R0` is the regression check: what worked before the request must still work (the original tests, the original
-behaviour the request did not change). A requirement only counts when `R0` holds.
+`R0` is the regression check: what worked before the request must still work (the original tests, run from a hidden
+copy in `judge/`, and the original behaviour the request did not change). A requirement only counts when `R0` holds.
+`checks` gives, for each part, the checks passed and the checks in total; it feeds the secondary measure "checks passed".
+`R0` does not include the gates: they also run the tool's own new tests, and are reported separately in `gates`, so
+one failing test the tool wrote is visible without zeroing every requirement.
 
 Rules for judges:
 - Deterministic: no network, no randomness without a fixed seed, no sleeps longer than needed.
