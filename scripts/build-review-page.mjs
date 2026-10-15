@@ -103,7 +103,7 @@ for (const id of readdirSync(TASKS).sort()) {
 	const dir = join(TASKS, id);
 	if (!existsSync(join(dir, "task.json"))) continue;
 	const task = JSON.parse(readFileSync(join(dir, "task.json"), "utf8"));
-	if (task.kind !== "long") continue;
+	if (task.kind !== "long" && task.kind !== "everyday") continue;
 	const request = readFileSync(join(dir, "request.md"), "utf8");
 	const checksPath = join(dir, "judge", "CHECKS.md");
 	// A task is shown once its builder has finished it: judge/CHECKS.md is written last.
@@ -122,7 +122,12 @@ for (const id of readdirSync(TASKS).sort()) {
 		private: task.private === true,
 		requirements: task.requirements,
 		stats: { ...repoStats(join(dir, "repo")), requestWords: request.split(/\s+/).filter(Boolean).length, checks: counts },
-		request: splitRequest(request),
+		request: (() => {
+			// An everyday change is one part: the whole request is R1, numbered behaviours and all.
+			if (task.kind === "everyday") return { intro: "", parts: [request.trim()], outro: "" };
+			return splitRequest(request);
+		})(),
+		kind: task.kind,
 		checks,
 	});
 }

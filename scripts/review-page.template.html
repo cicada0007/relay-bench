@@ -128,7 +128,7 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 <script>
 (() => {
 	const DATA = JSON.parse(document.getElementById("review-data").textContent);
-	const PARTS = ["R1", "R2", "R3", "R4", "R5", "R6", "R0"];
+	const partsOf = (t) => [...t.requirements, "R0"];
 	const LABELS = { fair: "Clear and fair", unclear: "Unclear", unfair: "Unfair" };
 	const verdicts = new Map(); // "task__part" -> {verdict, note, at}
 	let db = null;
@@ -151,16 +151,16 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 		let done = 0;
 		let flagged = 0;
 		let marked = 0;
-		const total = DATA.tasks.length * PARTS.length;
+		const total = DATA.tasks.reduce((n, t) => n + partsOf(t).length, 0);
 		for (const t of DATA.tasks) {
 			let fair = 0;
-			for (const p of PARTS) {
+			for (const p of partsOf(t)) {
 				const v = verdicts.get(key(t.id, p))?.verdict;
 				if (v) marked++;
 				if (v === "fair") fair++;
 				if (v === "unclear" || v === "unfair") flagged++;
 			}
-			if (fair === PARTS.length) done++;
+			if (fair === partsOf(t).length) done++;
 		}
 		document.getElementById("summary").innerHTML =
 			`<span><b>${done}</b> of ${DATA.tasks.length} tasks ready</span>` +
@@ -172,7 +172,7 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 		const nav = document.getElementById("tasklist");
 		nav.innerHTML = DATA.tasks
 			.map((t) => {
-				const dots = PARTS.map((p) => {
+				const dots = partsOf(t).map((p) => {
 					const v = verdicts.get(key(t.id, p))?.verdict || "";
 					return `<span class="dot ${v}" title="${p}: ${v ? LABELS[v] : "not marked"}">${p}</span>`;
 				}).join("");
@@ -217,18 +217,18 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 		const checkTotal = Object.entries(s.checks).filter(([p]) => p !== "R0").reduce((a, [, c]) => a + c, 0);
 		main.innerHTML = `
 			<div class="task-head">
-				<div class="eyebrow mono">${esc(t.id)}${t.private ? " · private holdout" : ""}</div>
+				<div class="eyebrow mono">${esc(t.id)} · ${t.kind === "everyday" ? "everyday change" : "long request"}${t.private ? " · private holdout" : ""}</div>
 				<h2>${esc(t.title)}</h2>
 				<div class="chips">
 					<span class="chip">${esc(t.stack.join(", "))}</span>
 					<span class="chip">${s.sourceLines.toLocaleString()} lines of source</span>
 					<span class="chip">${s.testFiles} test files</span>
 					<span class="chip">${s.requestWords.toLocaleString()} words in the request</span>
-					${t.checks ? `<span class="chip">${checkTotal} checks across 6 parts</span>` : `<span class="chip warn">no CHECKS.md yet</span>`}
+					${t.checks ? `<span class="chip">${checkTotal} checks across ${t.requirements.length} part${t.requirements.length === 1 ? "" : "s"}</span>` : `<span class="chip warn">no CHECKS.md yet</span>`}
 				</div>
 				<div class="intro md">${md(t.request.intro)}</div>
 			</div>
-			${PARTS.map((p) => partBlock(t, p)).join("")}
+			${partsOf(t).map((p) => partBlock(t, p)).join("")}
 			<section class="part"><div class="part-head"><span class="tag">all</span><h3>Rules for every part</h3></div>
 				<div class="col"><div class="md outro">${md(t.request.outro) || '<p class="empty">None.</p>'}</div></div></section>`;
 		syncControls();
