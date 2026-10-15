@@ -29,9 +29,12 @@ when one more run alone could pass it. Read a test's results with `node runner/a
 
 | Test | Command | Runs | Cap |
 | --- | --- | --- | --- |
-| A | `node runner/run-stage.mjs --test A --model claude-sonnet-5-5 --tools relay,prime-agent,claude-code --tasks kind:long --reps 3 --cap-usd 5 --stage-cap-usd 170 --concurrency 4 --out runs/round-1` | 108 | $170 |
-| B | `node runner/run-stage.mjs --test B --model claude-haiku-5-5 --tools relay,prime-agent,claude-code,hermes --tasks kind:long,kind:everyday --reps 3 --cap-usd 2 --stage-cap-usd 60 --concurrency 6 --out runs/round-1` | 288 | $60 |
-| D | `node runner/run-stage.mjs --test D --model claude-haiku-5-5 --tools relay,prime-agent,claude-code,hermes --tasks <2 long tasks> --faults kill,network,errors --reps 2 --cap-usd 2 --stage-cap-usd 20 --out runs/round-1` | 48 | $20 |
+| A | `node runner/run-stage.mjs --test A --model claude-sonnet-5-5 --tools relay,prime-agent,claude-code --tasks kind:long --reps 3 --cap-usd 5 --stage-cap-usd 190 --concurrency 4 --out runs/round-1` | 108 | $190 |
+| B, everyday | `node runner/run-stage.mjs --test B --model claude-haiku-5-5 --tools relay,prime-agent,claude-code,hermes --tasks kind:everyday --reps 3 --cap-usd 1 --stage-cap-usd 80 --concurrency 6 --out runs/round-1` | 144 | B shares $80 |
+| B, long | `node runner/run-stage.mjs --test B --model claude-haiku-5-5 --tools relay,prime-agent,claude-code,hermes --tasks kind:long --reps 1 --cap-usd 2 --stage-cap-usd 80 --concurrency 4 --out runs/round-1` | 48 | B shares $80 |
+| D | `node runner/run-stage.mjs --test D --model claude-haiku-5-5 --tools relay,prime-agent,claude-code,hermes --tasks <one long task> --faults kill,network,errors --reps 2 --cap-usd 1.5 --stage-cap-usd 25 --out runs/round-1` | 24 | $25 |
+
+Caps follow amendment 2 in PREREGISTRATION.md. The pilot spent $19.52.
 
 Tests C (OpenAI credit only), E (learning), F (Terminal-Bench 2.1) and G (long-context sets) have their own sections
 below once their runners exist.
