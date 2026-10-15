@@ -1,0 +1,15 @@
+{
+  "name": "relay-bench",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test meter/*.test.mjs runner/*.test.mjs",
+    "validate": "node scripts/validate-task.mjs"
+  },
+  "dependencies": {
+    "e2b": "^2.56.0"
+  }
+}

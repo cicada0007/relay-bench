@@ -1,0 +1,1 @@
+{ "id": "smoke-add", "kind": "everyday", "title": "Smoke test: add multiply", "stack": ["node22"], "requirements": ["R1"], "timeLimitMinutes": 15, "gates": { "test": "npm test" }, "private": false }

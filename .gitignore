@@ -1,0 +1,4 @@
+# Tasks stay local until the round ends: six of them are the private holdout (PREREGISTRATION.md).
+tasks/
+node_modules/
+runs/
