@@ -1,0 +1,245 @@
+{
+  "lockedAt": "2026-10-16T10:02:46.512Z",
+  "tasks": {
+    "node-build-runner": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "dc37cd5b10f2fb3d94c9cbef08f7fc2379280be4f2da9c7a2dfbbdf1daed784a",
+        "request": "bb99990d99ceee3113256ebc727036ebd17c458094954494fb7541ae84c33eb6",
+        "repo": "4fc5532f2264ed03218dc450d9a9f764d7fd6d09d386e498653b48d5eb8aaf3e",
+        "judge": "86e0efdf721dbb77f7c95a9984b31f74bcff0c1db37b645c268cc2dd8aee0d9b"
+      }
+    },
+    "node-build-runner-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "621aeb6783f01dd935a1d374dd3c80f7bb2d5c1dd7b759976d4f2cde1adbad88",
+        "request": "3162d86c8ece39a7bb402fe7c17c689de28ffe472d567c423408d689c867494f",
+        "repo": "4fc5532f2264ed03218dc450d9a9f764d7fd6d09d386e498653b48d5eb8aaf3e",
+        "judge": "e7a88c05e90d8c3870731a8200b0f568af0be21aaa9efb38178451439cb9bc36"
+      }
+    },
+    "node-http-framework": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "3a4b6a36fe92222bf1e10b3dfe7a1252da7d718738efe24738291d53dd986595",
+        "request": "a90473ff56ccb556b24af6eb834555c9714e1b376dab80618b9e9d2cc9af78d3",
+        "repo": "315eaa909111f61fc177b048490413d7d24b665d1a9a2c36a76df874a9317534",
+        "judge": "db03ffebc359361c9474659d26be602af21e4c1a0cbed1529130ac0f9ac45b38"
+      }
+    },
+    "node-http-framework-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "d59c34b0de4096f54ae59bc437e3b4ae9d6c71d346a58dd7d6e8350ff3b75ad9",
+        "request": "ba65e4b09df00ed37b0d76ae7e2c1aec7fa50b9355a351216ccc6bffc00d8d85",
+        "repo": "a9e5b33925c597ef5f11630681ec6364de7990199005ed4b7129c85d9521d5fd",
+        "judge": "b22fb0baf092c8fa626d73a970d9fe4ed5a9d91b74f6ad20631028649dded7b0"
+      }
+    },
+    "node-kv-store": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "80a447f0d87ceb7f7518e959107fb2ac4bbe3b053eb222063d7db079610fdfb4",
+        "request": "35375351d267c4e1aa71ecdf3adbcce4365758c82df8370053001cfe1bf5cfe1",
+        "repo": "d66952046f2154a0c7c1149f0fe439049547246f081abd06ed945851c3e9227f",
+        "judge": "c4e18ff229290d22c6dd09179c4bca02ee2a43d7dec8b17d37c5667ea5fa2449"
+      }
+    },
+    "node-kv-store-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "b979f012073b721b3cd606b24e1f350b2880edd1d36b0f10b31b082c0ef1c7f3",
+        "request": "f9f457a2d0877a04b85a9002653d00e426ad197bf452e7e977402de16d01d161",
+        "repo": "d66952046f2154a0c7c1149f0fe439049547246f081abd06ed945851c3e9227f",
+        "judge": "5626b8725b16b5480f0c8cf9310fd32a53fcc4f7e3a38e7b8fd59951022b2931"
+      }
+    },
+    "node-package-resolver": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "f54254d6b7714ed1fe0fe9fb8ef2195d95902ee7b5c0e89232f5b52d9564b4ff",
+        "request": "e3b7c855f9b198c0ca69c48c36b07f162b6fe05143af888a14573b9f79562821",
+        "repo": "9dbbdac5b91f3042bc5aa7c097f631ba15252dbdd3ba2877ed90b5d1daa52a25",
+        "judge": "5a7a1738df2ac7fde73f9660bfe4e12340a03b58bf7599e656ba18a18e5ac8c6"
+      }
+    },
+    "node-package-resolver-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "5d2bfd07601749eba1f2fb5d89fa0887444c1fd29cfc810f6791fda12dca15f9",
+        "request": "f9b55b0298319bfcd465b87ced206ac9fb76e88ee0a9a95d8bbf13eb069c29de",
+        "repo": "9dbbdac5b91f3042bc5aa7c097f631ba15252dbdd3ba2877ed90b5d1daa52a25",
+        "judge": "4326fcc650043ea70c6a63a254ec4849ff031959fb9252a3c1cf167cba7d7899"
+      }
+    },
+    "node-spreadsheet": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "294b5cf181e41c311c16bc85c7546414d210da6c157a913237e17d1aed14664f",
+        "request": "8ff2d92559f062907ad8c4cfea75e9b2effef9c46b6043319d6172b215fccd50",
+        "repo": "f0dacddec83a4245e6c6732f8a1ff16fcd7884da5ea8c510abf63f9b48893328",
+        "judge": "304132d65ed6b74a20b19554ec6afa62c42455cea55b9ce0526810d981fee06a"
+      }
+    },
+    "node-spreadsheet-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "d3aac53ade02db95acbdc8504775e9c17b090b9ee2a4c60cda54a118492ba3bd",
+        "request": "f21748f2504a25d9911099de62c2d04787adf0fcb08db16dccd77c85de0b1d63",
+        "repo": "4ccc8f7707a4b8d997eed4035a051a645a761ada8a325372d5b3a8b86a91e63d",
+        "judge": "79a65274799bbf8ff247f7fea98a22dddb23e91167c03dc13dca8059242690ed"
+      }
+    },
+    "node-template-engine": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "6becb9ac9f94fa054da0ad858062be24ee0c54f10a5fa1187ae3c1912d356d71",
+        "request": "f7357f8e84e84debbf004db5bbf77ad865698284f075c910d85528d7ea307189",
+        "repo": "ce0e5075d149a3ff8a64957248023afbdcc98b6d43f241dcbd2243f2071f2429",
+        "judge": "a4cda149449f94638939965ad798bfe3e2ab5ec730863fe8bfc6bef357936110"
+      }
+    },
+    "node-template-engine-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "dd0ec119c08c49854c22e85bf38b341229d0fce2348a8e2a955359b599446027",
+        "request": "9269be50e3f1fba87f4471501339ba9e044f3cca6dae922e0a5f3fc555d19b01",
+        "repo": "6dc3fe496d43e0cc2f3a6e13057a3fa13ca6974c04167dd32ccc5f23e40406e1",
+        "judge": "8429fbbcfcc07cfb6d93bfb1d12f7a996df24b244aa384b49bfcf63fc0e87ddc"
+      }
+    },
+    "py-calendar": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "8bba3be9a93d61460e0e3d6169d2cff1ca208f510bbdba64d93c986b2dac87a2",
+        "request": "cbea4085019a4a9ae8d9d28539b2a0580f79faf7fc4c1537891f34f016ab19da",
+        "repo": "f47d8fdbb1aa2c4e9c0596b60f79debada9dc90491dbd5f3571bd503c0a3287a",
+        "judge": "808af79f83793b3e9941abd6f961588945c32d28019d803cc90927638051b232"
+      }
+    },
+    "py-calendar-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "52c1053d145039dd7bc7d0b93f2e6238c7ce39283064cb885f8d5b3be69529d5",
+        "request": "48300d5604a098a171f952439da4acb3ed5d5f6007c7a1acffde7eb05a748c91",
+        "repo": "f47d8fdbb1aa2c4e9c0596b60f79debada9dc90491dbd5f3571bd503c0a3287a",
+        "judge": "1d78c1f200439d4c238f4b44c5f816723230cb061b5bac383fe25ebdeb65a330"
+      }
+    },
+    "py-dataframe": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "53224abfa585689f5c72623d5d95e19cad61d5ad9b99dbc17920d940fd56942e",
+        "request": "b6b7686572d0dd4acd8ce66fca54f5e0053666da4d068b9935816a168dc3f984",
+        "repo": "0f17d8c9fc6d98387383f93f9a181310876725afb2725f37b6641466a27acd6b",
+        "judge": "1eeeaaceb4bc49d3fd51f702152783243c89d85e865df187519aa0b902fbbbed"
+      }
+    },
+    "py-dataframe-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "6dbfac1649fc27ce33e5bae581983d38a73a20ddcbed515e8f5d3094a7ec62ff",
+        "request": "944d6b5ec5186b4728dc64ea18dc479d4188db9475b5794a979001e3a1939b33",
+        "repo": "0f17d8c9fc6d98387383f93f9a181310876725afb2725f37b6641466a27acd6b",
+        "judge": "45635556ead9dadc479d1d0981059506ef6893e8f247ed90ccb193deb0d1f5b2"
+      }
+    },
+    "py-issue-tracker": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "0f6d5104b12ab1ebb47fdfe0a684b933bc13b30121b635f2df7c9af7795b4b1f",
+        "request": "2175f4a44f76bb57c675dc44e160d5232ef30e23d1f2e6761151d8ecf78415af",
+        "repo": "1e7304fcae1cd8ee559208f7186ca571e6e347867c1d1af36598f4bafd209f9b",
+        "judge": "95ca2b5e0a826a0f4bd4af2765855a3eb368e6af7481761d48754048308642b1"
+      }
+    },
+    "py-issue-tracker-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "06cd9699296dbdd94f0f1a182bca071d7a4260f0375844b2d3a130515f8489cb",
+        "request": "83c9375665f9bf64e34f981af942e9038f5804f7f21ec14988b98e454e58183e",
+        "repo": "aa183cdf5b76dd254630e9924078ba011a97fb35d2abcacbd87616df31d3ccd0",
+        "judge": "b55a5e20e549aee316b175c5e70d0b524836428f75f350dee52f837e22992eb5"
+      }
+    },
+    "py-mini-sql": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "f89e3703554e979b3e8ac45c27c13bf7e561cae877134fbfd45a8791a63b4498",
+        "request": "b914c425dd1f928b47f1c3c2206cace05b77d67c5dbb97d61f2de350d995e712",
+        "repo": "3991c75c4da84d0dc9bd0f2d68e96fcf33e2ebf1b3e181195a4bafb60c1da08f",
+        "judge": "c52b1e4228222a2c77bd803aa6c09663cf24445c6b391a706357b1b3d9a2859e"
+      }
+    },
+    "py-mini-sql-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "a6c5642b07d2273c45645679d1b12aa71c56fbc063c3153fef2bc94936e616aa",
+        "request": "baec5c585f73c72786c92d52b2b216bcba365aa95dc7b7c028949faa42f2d72b",
+        "repo": "3991c75c4da84d0dc9bd0f2d68e96fcf33e2ebf1b3e181195a4bafb60c1da08f",
+        "judge": "b7cc2e9c0c2887c892898d310d14470a3d102a61ea2d0f751a481711de44c713"
+      }
+    },
+    "py-text-adventure": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "4273f4e1e19f894c0b849b8257e0195ae2f16cf2bf758a46145123f0c2e6da1b",
+        "request": "b7da9fc2efdb434046f032ad81bf0a2421397b74d0903b8bfdebda3195d4c7fa",
+        "repo": "84e8c40a576d949e10eccb34e16359d2bf12982ab1b9a5c0042745e0a81b1eca",
+        "judge": "7add3c4520d1c6ba2880b0f8a1c3810ac33e6a77c0b92065a8f583efa3149376"
+      }
+    },
+    "py-text-adventure-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "c2f66fb003baec38dedbf1e813304601e07296ab2433479d3ab97d68223923a4",
+        "request": "6017787a215f06c747b3cab86820031d67614f53eaf5767bf1ca019d92daa78f",
+        "repo": "84e8c40a576d949e10eccb34e16359d2bf12982ab1b9a5c0042745e0a81b1eca",
+        "judge": "45a24564b6bed403f7af90ac301d4d503ae9f626b56fa1514a232f0f1204e0b7"
+      }
+    },
+    "py-vcs-lite": {
+      "kind": "long",
+      "private": false,
+      "hashes": {
+        "task": "7fafd00e9d1e91c35d098e4198165f6a7cec5a371bb44c19b49e25d54ad8d163",
+        "request": "22c64ac5937387facbe0f38bdf125504bd893d152e2be948dae9faf8913a36b4",
+        "repo": "1c9294ff1b4b5a94d5259cb56294690df9f8178214cf19229cd3c5a2b1602b71",
+        "judge": "4c2b1841a123c4f7623cd15e8a3e52bf473bebf67dad6319979052a57763be9d"
+      }
+    },
+    "py-vcs-lite-e1": {
+      "kind": "everyday",
+      "private": false,
+      "hashes": {
+        "task": "541a88588301978d77c9e2a8bcfb472da0cd590c2bcdf1e88d1a18f0e8c537b1",
+        "request": "c38ba797012ba5be9a45c14cb024a292302d341ba6b1c3a2440a2b58172b1b4e",
+        "repo": "668a02d501fadaefb04dcd89f93eda707bbbcad28077d93ea208f538d8d34ee6",
+        "judge": "ff9485f5e9a9ed7dcaead21f3c709e6abba14a8e2f5a38d919b874455c2317f7"
+      }
+    }
+  }
+}
