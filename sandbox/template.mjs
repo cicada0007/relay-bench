@@ -11,7 +11,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 export const TEMPLATE_NAME = "relay-bench-round-1";
 export const PINS = Object.freeze({
 	node: "22",
-	relay: "0.6.117",
+	relay: "0.6.118",
 	primeAgent: "0.10.0",
 	claudeCode: "2.1.300",
 	hermes: "0.22.2",
