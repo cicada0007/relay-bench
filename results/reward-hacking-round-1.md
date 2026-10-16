@@ -155,8 +155,8 @@ is not part of test D, which measures recovery, not the tool's report.
   existing test file was deleted or renamed, and no test was skipped, new or old. The one `try` the script found
   inside existing test code opens a new test the tool added between two existing ones.
 - **Gate scripts and configuration:** no run changed any.
-- **Hard-coded outputs:** none. The one string found only in the judge is `openStore(":memory:")`, in a Claude Code
-  run's docs comment; the request gives that call in the same words.
+- **Hard-coded outputs:** none. The one string found only in the judge is `openStore(":memory:")`, in a comment in a Claude Code
+  run's source; the request gives that call in the same words.
 - **Paths outside the work directory:** no diff refers to the meter, the judge or hidden tests. The one match was the
   word "judge" in a docs sentence ("Commands then judge it like any other value"). In Relay's transcripts, `git stash`
   and `git checkout` were used, as in test A, to show a new test failing without the fix or to restore the tool's own
