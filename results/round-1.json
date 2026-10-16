@@ -1,9 +1,9 @@
 {
   "round": 1,
-  "generatedAt": "2026-10-16T19:30:27.517Z",
+  "generatedAt": "2026-10-16T22:26:34.811Z",
   "status": "in progress",
   "repository": "https://github.com/cicada0007/relay-bench",
-  "commit": "bd219f57adacc078216137b738908cef1001e413",
+  "commit": "55c7cbef6aaf58e10967d55c01dddd080c5fb30d",
   "preregistration": "https://github.com/cicada0007/relay-bench/blob/main/PREREGISTRATION.md",
   "statistics": {
     "unit": "The task (an item in test G). A tool's score on a task is its mean over that task's runs.",
@@ -425,12 +425,12 @@
       "model": "claude-haiku-5-5",
       "measure": "requirements met",
       "unit": "task",
-      "status": "in progress",
-      "stageLogEnd": null,
+      "status": "complete",
+      "stageLogEnd": "stage D finished: $16.97 spent",
       "plannedRuns": 24,
-      "runs": 8,
+      "runs": 24,
       "capUsd": 25,
-      "spentUsd": 5.586663735,
+      "spentUsd": 16.965174345,
       "faults": {
         "kill": "The tool's process group is killed once (SIGKILL), 120 seconds after its first model request.",
         "network": "For 10 minutes, starting 120 seconds after the first model request, every model request's connection is dropped.",
@@ -440,73 +440,73 @@
         "relay": {
           "name": "Relay",
           "kill": {
-            "runs": 1,
-            "finishedWithNobody": 0,
-            "restarts": 1
+            "runs": 2,
+            "finishedWithNobody": 1,
+            "restarts": 2
           },
           "network": {
-            "runs": 1,
+            "runs": 2,
             "finishedWithNobody": 1,
             "restarts": 0
           },
           "errors": {
-            "runs": 0,
-            "finishedWithNobody": 0,
+            "runs": 2,
+            "finishedWithNobody": 2,
             "restarts": 0
           }
         },
         "claude-code": {
           "name": "Claude Code",
           "kill": {
-            "runs": 1,
-            "finishedWithNobody": 1,
-            "restarts": 1
+            "runs": 2,
+            "finishedWithNobody": 2,
+            "restarts": 2
           },
           "network": {
-            "runs": 1,
-            "finishedWithNobody": 1,
-            "restarts": 3
+            "runs": 2,
+            "finishedWithNobody": 2,
+            "restarts": 6
           },
           "errors": {
-            "runs": 0,
-            "finishedWithNobody": 0,
-            "restarts": 0
+            "runs": 2,
+            "finishedWithNobody": 1,
+            "restarts": 4
           }
         },
         "prime-agent": {
           "name": "Prime Agent",
           "kill": {
-            "runs": 0,
+            "runs": 2,
             "finishedWithNobody": 0,
-            "restarts": 0
+            "restarts": 1
           },
           "network": {
-            "runs": 1,
+            "runs": 2,
             "finishedWithNobody": 0,
-            "restarts": 3
+            "restarts": 6
           },
           "errors": {
-            "runs": 1,
+            "runs": 2,
             "finishedWithNobody": 0,
-            "restarts": 3
+            "restarts": 6
           }
         },
         "hermes": {
           "name": "Hermes",
           "kill": {
-            "runs": 1,
-            "finishedWithNobody": 1,
-            "restarts": 1
+            "runs": 2,
+            "finishedWithNobody": 2,
+            "restarts": 2
           },
           "network": {
-            "runs": 1,
-            "finishedWithNobody": 0,
-            "restarts": 1
+            "runs": 2,
+            "finishedWithNobody": 1,
+            "restarts": 4
           },
           "errors": {
-            "runs": 0,
-            "finishedWithNobody": 0,
-            "restarts": 0
+            "runs": 2,
+            "finishedWithNobody": 2,
+            "restarts": 2
           }
         }
       },
@@ -518,50 +518,50 @@
         "relay": {
           "name": "Relay",
           "tasks": 1,
-          "runs": 2,
-          "score": 91.66666666666667,
-          "checksPassed": 99.23076923076923,
+          "runs": 6,
+          "score": 80.55555555555557,
+          "checksPassed": 83.33333333333334,
           "allRunsPass": 0,
-          "saidDoneButFailed": 50,
-          "costUsd": 1.0880624499999993,
-          "costPerSolvedUsd": 1.0880624499999993,
-          "medianMinutes": 37.22593333333333
+          "saidDoneButFailed": 16.666666666666664,
+          "costUsd": 2.5720812,
+          "costPerSolvedUsd": 0.6430203,
+          "medianMinutes": 40.465583333333335
         },
         "claude-code": {
           "name": "Claude Code",
           "tasks": 1,
-          "runs": 2,
-          "score": 100,
-          "checksPassed": 100,
-          "allRunsPass": 100,
-          "saidDoneButFailed": 0,
-          "costUsd": 2.10686661,
-          "costPerSolvedUsd": 1.053433305,
-          "medianMinutes": 25.032866666666667
+          "runs": 6,
+          "score": 97.22222222222221,
+          "checksPassed": 99.74358974358975,
+          "allRunsPass": 0,
+          "saidDoneButFailed": 16.666666666666664,
+          "costUsd": 6.014212910000001,
+          "costPerSolvedUsd": 1.2028425820000002,
+          "medianMinutes": 22.309933333333333
         },
         "prime-agent": {
           "name": "Prime Agent",
           "tasks": 1,
-          "runs": 2,
-          "score": 0,
-          "checksPassed": 1.5384615384615385,
+          "runs": 6,
+          "score": 2.7777777777777777,
+          "checksPassed": 6.153846153846154,
           "allRunsPass": 0,
-          "saidDoneButFailed": 0,
-          "costUsd": 0.044899055,
+          "saidDoneButFailed": 16.666666666666664,
+          "costUsd": 1.43977842,
           "costPerSolvedUsd": null,
           "medianMinutes": 3.6020333333333334
         },
         "hermes": {
           "name": "Hermes",
           "tasks": 1,
-          "runs": 2,
-          "score": 91.66666666666667,
-          "checksPassed": 99.23076923076923,
+          "runs": 6,
+          "score": 97.22222222222223,
+          "checksPassed": 99.74358974358975,
           "allRunsPass": 0,
-          "saidDoneButFailed": 50,
-          "costUsd": 2.3468356200000007,
-          "costPerSolvedUsd": 2.3468356200000007,
-          "medianMinutes": 30.69825
+          "saidDoneButFailed": 16.666666666666664,
+          "costUsd": 6.939101815000001,
+          "costPerSolvedUsd": 1.3878203630000001,
+          "medianMinutes": 23.680183333333332
         }
       },
       "comparisons": {}
@@ -576,9 +576,9 @@
       "status": "in progress",
       "stageLogEnd": null,
       "plannedRuns": 356,
-      "runs": 168,
+      "runs": 202,
       "capUsd": 45,
-      "spentUsd": 15.424441945000005,
+      "spentUsd": 16.062938385000002,
       "droppedTasks": [
         "terminal-bench/qemu-alpine-ssh",
         "terminal-bench/qemu-startup"
@@ -591,33 +591,33 @@
       "tools": {
         "relay": {
           "name": "Relay",
-          "tasks": 83,
-          "runs": 83,
-          "score": 72.28915662650603,
-          "scoreLow": 62.65060240963855,
-          "scoreHigh": 81.92771084337349,
+          "tasks": 87,
+          "runs": 99,
+          "score": 71.83908045977012,
+          "scoreLow": 62.06896551724138,
+          "scoreHigh": 81.03448275862068,
           "checksPassed": null,
-          "allRunsPass": 72.28915662650603,
+          "allRunsPass": 71.26436781609196,
           "saidDoneButFailed": null,
-          "costUsd": 2.1128441899999997,
-          "costPerSolvedUsd": 0.03521406983333333,
-          "medianMinutes": 1.5368333333333333,
+          "costUsd": 2.35585174,
+          "costPerSolvedUsd": 0.032271941643835615,
+          "medianMinutes": 1.6271,
           "stoppedAtCap": 0,
           "unmeteredTrials": 1
         },
         "claude-code": {
           "name": "Claude Code",
-          "tasks": 81,
-          "runs": 81,
-          "score": 85.18518518518519,
-          "scoreLow": 77.77777777777777,
-          "scoreHigh": 92.5925925925926,
+          "tasks": 87,
+          "runs": 99,
+          "score": 83.33333333333333,
+          "scoreLow": 75.28735632183908,
+          "scoreHigh": 90.80459770114942,
           "checksPassed": null,
-          "allRunsPass": 85.18518518518519,
+          "allRunsPass": 82.75862068965517,
           "saidDoneButFailed": null,
-          "costUsd": 3.0891541400000007,
-          "costPerSolvedUsd": 0.04477034985507247,
-          "medianMinutes": 1.2855666666666667,
+          "costUsd": 3.4473570200000005,
+          "costPerSolvedUsd": 0.04103996452380953,
+          "medianMinutes": 1.2918666666666667,
           "stoppedAtCap": 0,
           "unmeteredTrials": 0
         }
@@ -625,10 +625,10 @@
       "comparisons": {
         "claude-code": {
           "name": "Claude Code",
-          "tasks": 81,
-          "difference": -12.345679012345679,
-          "low": -22.22222222222222,
-          "high": -2.4691358024691357,
+          "tasks": 87,
+          "difference": -11.494252873563218,
+          "low": -21.264367816091955,
+          "high": -1.7241379310344827,
           "word": "worse"
         }
       }
@@ -867,10 +867,10 @@
       "pilot": 19.52,
       "A": 185.69183660000002,
       "B": 62.580731555,
-      "D": 5.586663735,
-      "F": 15.424441945000005,
+      "D": 16.965174345,
+      "F": 16.062938385000002,
       "G": 1.5004829999999987
     },
-    "totalUsd": 290.304156835
+    "totalUsd": 302.321163885
   }
 }
