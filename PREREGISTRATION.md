@@ -174,3 +174,15 @@ Haiku 5.5. Every change below applies before any counted run; the pilot's record
   | E | runs only if money is left after the tests above | rest |
 
   Test A is unchanged and unshrunk. Every cut is listed on the results page.
+
+### 3. Who reads the tasks, and which tests run (16 October 2026, before any counted run)
+
+- **The read-through is delegated.** The founders asked for an independent review in place of their own reading of
+  every task and judge. A separate model reads each request beside its judge and its CHECKS.md, and asks one question
+  of every check: would a careful developer who read only the request build what this check expects? A check that
+  fails that test is fixed (the judge accepts every reasonable reading, or the request states what the check needs)
+  before any counted run, so the fix applies to every tool alike. Each review is kept in `reviews/` and published with
+  the tasks after the round, so anyone can read the same tasks and judge the reviews.
+- **Tests run in round 1:** A, B and D, then F (Terminal-Bench 2.1) and G (two long-context sets) once their runners
+  are built, within the $400. **Not run in round 1:** C, because the round has no OpenAI credit, and E, because it needs
+  a Relay change (lessons that can be held still) and 60 further tasks. The results page lists both as not run.
