@@ -50,7 +50,7 @@ export function word({ low, high }) {
 	return "no clear difference";
 }
 
-function analyze(records) {
+export function analyze(records) {
 	const byTool = new Map();
 	for (const r of records) {
 		if (!byTool.has(r.tool)) byTool.set(r.tool, new Map());
@@ -96,18 +96,14 @@ function analyze(records) {
 	return { toolSummary, comparisons };
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-	const { values: args } = parseArgs({
-		options: { out: { type: "string", default: "runs/round-1" }, test: { type: "string" }, json: { type: "boolean", default: false } },
-	});
-	if (!args.test) throw new Error("--test is required");
-	const records = readFileSync(join(ROOT, args.out, "records.jsonl"), "utf8")
+/** One test's records from <out>/records.jsonl. A run graded again after a judge fix (rejudge.mjs) counts with its latest grade. */
+export function loadRecords(out, test) {
+	const records = readFileSync(join(ROOT, out, "records.jsonl"), "utf8")
 		.split("\n")
 		.filter(Boolean)
 		.map((l) => JSON.parse(l))
-		.filter((r) => r.test === args.test);
-	// A run graded again after a judge fix (rejudge.mjs) counts with its latest grade.
-	const rejudgedPath = join(ROOT, args.out, "rejudged.jsonl");
+		.filter((r) => r.test === test);
+	const rejudgedPath = join(ROOT, out, "rejudged.jsonl");
 	if (existsSync(rejudgedPath)) {
 		const latest = new Map();
 		for (const line of readFileSync(rejudgedPath, "utf8").split("\n").filter(Boolean)) {
@@ -119,6 +115,15 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			if (g) Object.assign(r, { judge: g.judge, score: g.score, saidDoneButFailed: g.saidDoneButFailed, rejudgedAt: g.rejudgedAt });
 		}
 	}
+	return records;
+}
+
+if (process.argv[1] === new URL(import.meta.url).pathname) {
+	const { values: args } = parseArgs({
+		options: { out: { type: "string", default: "runs/round-1" }, test: { type: "string" }, json: { type: "boolean", default: false } },
+	});
+	if (!args.test) throw new Error("--test is required");
+	const records = loadRecords(args.out, args.test);
 	const result = analyze(records);
 	if (args.json) {
 		console.log(JSON.stringify(result, null, 2));
