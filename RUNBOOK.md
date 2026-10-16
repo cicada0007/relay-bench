@@ -36,8 +36,37 @@ when one more run alone could pass it. Read a test's results with `node runner/a
 
 Caps follow amendment 2 in PREREGISTRATION.md. The pilot spent $19.52.
 
-Tests C (OpenAI credit only), E (learning), F (Terminal-Bench 2.1) and G (long-context sets) have their own sections
-below once their runners exist.
+Tests C (OpenAI credit only), E (learning) and G (long-context sets) have their own sections below once their runners
+exist.
+
+## Test F: Terminal-Bench 2.1
+
+Terminal-Bench 2.1's full public set (89 tasks), Relay and Claude Code on Claude Haiku 5.5, 2 trials per task per tool,
+through Harbor, the benchmark's official runner, with every task in an E2B sandbox (no Docker needed).
+
+- **Pins.** Harbor 0.24.0 and the dataset version `terminal-bench/terminal-bench-2-1@sha256:7d7bdc1c…` (registry revision
+  6; `runner/tb21-tasks.json` lists its tasks, `harbor-agents/tb21_tasks.py` rewrites it). Relay 0.6.118, Claude Code
+  2.1.300 and Node 22.23.1 (the same Node for both tools) are pinned in `harbor-agents/relay_bench_agents.py`.
+- **The agents.** `relay_bench_agents:Relay` installs Relay with its installer, sets every tier to the test model, and
+  runs `relay -p --mode json` on the task's instruction. `relay_bench_agents:BenchClaudeCode` is Harbor's own
+  `claude-code` agent unchanged (permissions bypassed in the container), with every Claude Code tier on the test model.
+  Both send their model traffic through the round's meter inside the task container, as in the other tests; Harbor's
+  cost and token fields come from it, and each tool's own report is kept beside them in the trial's `result.json`.
+- **Caps.** Each trial stops at `--cap-usd` (the meter refuses further model requests). A trial starts only while the
+  stage's spend plus every trial in flight at its cap stays within `--stage-cap-usd`.
+- **Timeouts.** Each task's own agent and verifier timeouts from the dataset, the same for both tools.
+
+Install Harbor once: `uv tool install 'harbor[e2b]==0.24.0'`. Then run, and run the same command again to resume:
+
+```
+node runner/tb21.mjs --tools relay,claude-code --trials 2 --model claude-haiku-5-5 --cap-usd 1 --stage-cap-usd 45 --concurrency 4 --out runs/round-1
+node runner/tb21-analyze.mjs --out runs/round-1 --test F
+```
+
+Results land in `runs/round-1/F/`: `records.jsonl` (one line per trial), `spend.jsonl` (every attempt's metered cost,
+retries included), `infra-failures.log`, and `jobs/<job>/` with Harbor's full trial directories (the tool's output,
+`meter.jsonl`, the verifier's output). A development run on a few tasks uses another test name and output folder:
+`node runner/tb21.mjs --test dev-F --tasks fix-git,regex-log --cap-usd 0.2 --stage-cap-usd 1.5 --out runs/dev`.
 
 ## Test D's faults
 

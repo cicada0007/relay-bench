@@ -6,3 +6,4 @@ runs/
 tasks-draft1/
 # The task review page embeds the private tasks.
 review/
+__pycache__/
