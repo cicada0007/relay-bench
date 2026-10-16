@@ -36,8 +36,8 @@ when one more run alone could pass it. Read a test's results with `node runner/a
 
 Caps follow amendment 2 in PREREGISTRATION.md. The pilot spent $19.52.
 
-Tests C (OpenAI credit only), E (learning) and G (long-context sets) have their own sections below once their runners
-exist.
+Tests C (OpenAI credit only) and E (learning) will get their own sections below once their runners exist. Tests F and
+G have theirs.
 
 ## Test F: Terminal-Bench 2.1
 
@@ -67,6 +67,67 @@ Results land in `runs/round-1/F/`: `records.jsonl` (one line per trial), `spend.
 retries included), `infra-failures.log`, and `jobs/<job>/` with Harbor's full trial directories (the tool's output,
 `meter.jsonl`, the verifier's output). A development run on a few tasks uses another test name and output folder:
 `node runner/tb21.mjs --test dev-F --tasks fix-git,regex-log --cap-usd 0.2 --stage-cap-usd 1.5 --out runs/dev`.
+
+## Test G: two long-context sets
+
+Two long-context benchmarks from the same-model table in Prime Agent's launch post
+(primeintellect.ai/blog/prime-agent). Both have public data and a mechanical scorer, with no model acting as judge:
+
+- **OOLONG (yahoo, 128k).** OOLONG-synth (`oolongbench/oolong-synth`, revision `f0d59eaf0feb…`), test split, the
+  `yahoo` rows with a 131,072-token window. There are exactly 50 of them, so the sample of 50 is all of them. Scored
+  with OOLONG's `synth_process_response` (abertsch72/oolong at `0bb7eabe…`).
+- **LongBench v2.** `zai-org/LongBench-v2` (formerly THUDM), revision `2b48e494f2c7…`, `data.json` sha256 `15d61c22…`.
+  50 of the 503 questions are drawn. Scored with LongBench's `extract_answer` and accuracy, uncompensated
+  (THUDM/LongBench at `2e00731f…`).
+
+These two were chosen because both are on Hugging Face at a pinned revision and both have a published deterministic
+scorer. The table's other rows were not checked to the same depth. EmulatorBench is a preview benchmark. `runner/longctx-manifest.json` is committed. It lists
+both samples in their drawn order: ascending ids, a Fisher-Yates shuffle with mulberry32 seeded 20261015, then the first
+50. It also records each item's answer and the sha256 of its context and question. If the round shrinks (step 1 of
+the shrink order), `--per-set 25` runs the first 25 of each set.
+
+Each run uses a fresh sandbox from `relay-bench-round-1`. The item's context is written to `/home/user/work/context.txt`
+and the prompt is the benchmark's own question, with one line saying where the context is. Each tool runs in its own
+non-interactive mode, printing text: `relay -p`, `claude -p --dangerously-skip-permissions` and `prime-agent -p`. Every
+model tier is on the test model, set as in `runner/arms.mjs`. Prime Agent reaches the meter through its endpoint
+setting, as in the other tests. The tool's final printed answer is scored. Model traffic goes through the round's meter
+at api.anthropic.com (`runner/sandbox-meter.mjs`), which stops a run at `--cap-usd`. A run starts only while the stage's
+spend, plus every run in flight at its cap, stays within `--stage-cap-usd`.
+
+Download the data once (465 MB; it needs `uv`, because OOLONG's parquet is read with DuckDB). Check it against the
+manifest, then run. To resume, run the same command again:
+
+```
+node runner/longctx-data.mjs && node runner/longctx-data.mjs --check
+node runner/longctx.mjs --tools relay,claude-code,prime-agent --per-set 50 --model claude-haiku-5-5 --cap-usd 0.5 --stage-cap-usd 25 --concurrency 4 --out runs/round-1
+node runner/longctx-analyze.mjs --out runs/round-1 --test G
+```
+
+Results land in `runs/round-1/G/`:
+
+- `records.jsonl`, one line per run
+- `spend.jsonl`, every attempt's metered cost, retries included
+- `infra-failures.log`
+- one folder per run, with the tool's stdout and stderr, `meter.jsonl` and `record.json`
+
+An item whose run failed twice because of our infrastructure is dropped for every tool, and the analysis lists it.
+
+**Projected cost.** 18 development runs (3 items per set, each tool) cost $0.087 in total. The most expensive run cost
+$0.016, and no run came near its cap. The mean per item per tool:
+
+| Set | Relay | Claude Code | Prime Agent |
+| --- | --- | --- | --- |
+| OOLONG | $0.0021 | $0.0016 | $0.0034 |
+| LongBench v2 | $0.0071 | $0.0044 | $0.0104 |
+
+At those rates the full stage (50 per set, three tools, 300 runs) costs about $1.50. Allowing three times that for
+longer LongBench items gives about $4.50, well inside $25, so the stage does not need to shrink. In development every
+tool answered in 10 to 30 seconds without reading most of the context. On OOLONG every tool said the answer "cannot
+be determined", because the lines carry no labels: the task expects the model to label each question itself. So all
+three tools may score near 0 on that set with Haiku 5.5.
+
+A development run uses another test name, and its output goes under `runs/dev-G/`:
+`node runner/longctx.mjs --test dev-G --out runs --per-set 3 --cap-usd 0.3 --stage-cap-usd 1.9`.
 
 ## Test D's faults
 
