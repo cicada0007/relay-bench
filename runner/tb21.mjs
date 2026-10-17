@@ -12,7 +12,9 @@
 //   (spent + trials in flight x --cap-usd + --cap-usd) stays within --stage-cap-usd; when even one more trial alone could
 //   pass it, it stops. Spend is the sum of every attempt's metered cost (<out>/F/spend.jsonl), retries included; an
 //   attempt whose meter log was lost counts as its full cap.
-// - Resume: run the same command again; trials already in <out>/F/records.jsonl are skipped.
+// - Resume: run the same command again; trials already in <out>/F/records.jsonl are skipped. With --reclassify, the
+//   current classification (classifyTrial) is applied to recorded trials first, and any it now classes as an
+//   infrastructure failure is moved to <out>/F/superseded.jsonl and given its second, last attempt.
 // - A trial that ends without a grade because of our infrastructure (sandbox build, install, Harbor, or a provider
 //   outage the tool could not ride out) is run again once and logged; if it fails again it is recorded as an
 //   infrastructure failure, and the analysis drops that task for every tool (PREREGISTRATION.md, "Runs that break").
@@ -20,7 +22,7 @@
 //   never appears on a command line or in a file. Harbor runs with a clean environment, so nothing else from this
 //   shell (such as an ANTHROPIC_BASE_URL) reaches a task container.
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -57,6 +59,26 @@ const TOOL_ENDINGS = new Set([
 	"ApiResponseStalledError",
 ]);
 
+/**
+ * What a Harbor trial result says about who failed. Ours, not the tool's: no result at all; a provider failure the tool
+ * could not ride out (unless the trial was stopped at its cap, which is the tool's limit); no grade for any reason
+ * other than the tool's own; or no grade because the tool never started (Harbor's agent_execution is empty: the
+ * sandbox or our install of the tool failed, whatever the exception's name).
+ */
+export function classifyTrial(result) {
+	const meter = result?.agent_result?.metadata?.meter ?? null;
+	const exception = result?.exception_info?.exception_type ?? null;
+	const reward = result?.verifier_result?.rewards?.reward;
+	const graded = typeof reward === "number";
+	const stoppedAtCap = (meter?.refusedAtCap ?? 0) > 0;
+	const neverStarted = !!result && !result.agent_execution;
+	const infra =
+		!result ||
+		(PROVIDER_FAILURES.has(exception) && !stoppedAtCap && reward !== 1) ||
+		(!graded && !stoppedAtCap && (neverStarted || !TOOL_ENDINGS.has(exception)));
+	return { meter, exception, reward, graded, stoppedAtCap, infra };
+}
+
 const mask = (s) => String(s).replace(/(sk-ant-|e2b_)[A-Za-z0-9_-]{4,}/g, "$1[MASKED]");
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
@@ -73,6 +95,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			// Development only: a comma list of task names (with or without "terminal-bench/") in place of the full set.
 			tasks: { type: "string" },
 			"dry-run": { type: "boolean", default: false },
+			// Apply the current classification to trials already recorded; any now classed as ours is moved to
+			// superseded.jsonl and run again (its second and last attempt).
+			reclassify: { type: "boolean", default: false },
 		},
 	});
 	if (!args["stage-cap-usd"]) throw new Error("--stage-cap-usd is required");
@@ -92,6 +117,25 @@ function harborEnv() {
 		RELAY_BENCH_ANTHROPIC_KEY: process.env.RELAY_BENCH_ANTHROPIC_KEY,
 		E2B_API_KEY: process.env.E2B_API_KEY,
 	};
+}
+
+/** Re-applies classifyTrial to every recorded trial; a trial it now classes as ours is moved out of records.jsonl. */
+function reclassify({ stageDir, jobsDir, recordsPath, dryRun }) {
+	const keep = [];
+	const moved = [];
+	for (const r of readJsonl(recordsPath)) {
+		const resultPath = r.trialName ? join(jobsDir, r.jobName, r.trialName, "result.json") : null;
+		const result = resultPath && existsSync(resultPath) ? JSON.parse(readFileSync(resultPath, "utf8")) : undefined;
+		if (!r.infra && result && classifyTrial(result).infra) moved.push(r);
+		else keep.push(r);
+	}
+	for (const r of moved) console.log(`reclassify: ${r.task} ${r.tool} r${r.rep} (${r.exception}) is an infrastructure failure; running it again`);
+	if (dryRun || moved.length === 0) return;
+	const at = new Date().toISOString();
+	const reason = "reclassified: no grade and the tool never started (Harbor agent_execution empty)";
+	appendFileSync(join(stageDir, "superseded.jsonl"), moved.map((r) => `${JSON.stringify({ ...r, supersededAt: at, reason })}\n`).join(""));
+	for (const r of moved) appendFileSync(join(stageDir, "infra-failures.log"), `${at} ${r.test}|${r.task}|${r.tool}|${r.model}|r${r.rep} attempt 1 (${r.exception}; ${reason})\n\n`);
+	writeFileSync(recordsPath, keep.map((r) => `${JSON.stringify(r)}\n`).join(""));
 }
 
 function readJsonl(path) {
@@ -125,6 +169,8 @@ async function runStage(args) {
 	const jobs = [];
 	// Repetition, then task, then tool: a stage cut short still compares the tools on the same tasks.
 	for (let rep = 1; rep <= Number(args.trials); rep++) for (const task of tasks) for (const tool of tools) jobs.push({ task, tool, rep });
+	if (args.reclassify) reclassify({ stageDir, jobsDir, recordsPath, dryRun: args["dry-run"] });
+	const retried = new Set(readJsonl(join(stageDir, "superseded.jsonl")).map((r) => `${r.test}|${r.task}|${r.tool}|${r.model}|r${r.rep}`));
 	const done = new Set(readJsonl(recordsPath).map((r) => `${r.test}|${r.task}|${r.tool}|${r.model}|r${r.rep}`));
 	const pending = jobs.filter((j) => !done.has(key(j)));
 	const spent = () => readJsonl(spendPath).reduce((s, a) => s + a.chargedUsd, 0);
@@ -171,17 +217,7 @@ async function runStage(args) {
 			? readdirSync(jobDir).map((d) => join(jobDir, d)).find((d) => existsSync(join(d, "result.json")))
 			: undefined;
 		const result = trialDir ? JSON.parse(readFileSync(join(trialDir, "result.json"), "utf8")) : undefined;
-		const meter = result?.agent_result?.metadata?.meter ?? null;
-		const exception = result?.exception_info?.exception_type ?? null;
-		const reward = result?.verifier_result?.rewards?.reward;
-		const graded = typeof reward === "number";
-		const stoppedAtCap = (meter?.refusedAtCap ?? 0) > 0;
-		// Ours, not the tool's: no result at all; a provider failure the tool could not ride out (unless the trial
-		// was stopped at its cap, which is the tool's limit); or no grade for any reason other than the tool's own.
-		const infra =
-			!result ||
-			(PROVIDER_FAILURES.has(exception) && !stoppedAtCap && reward !== 1) ||
-			(!graded && !stoppedAtCap && !TOOL_ENDINGS.has(exception));
+		const { meter, exception, reward, graded, stoppedAtCap, infra } = classifyTrial(result);
 		const ms = (t) => (t?.started_at && t?.finished_at ? Date.parse(t.finished_at) - Date.parse(t.started_at) : null);
 		return {
 			test: args.test,
@@ -244,7 +280,7 @@ async function runStage(args) {
 			inFlight++;
 			inFlightTasks.set(job.task, (inFlightTasks.get(job.task) ?? 0) + 1);
 			let record;
-			for (let n = 1; n <= 2; n++) {
+			for (let n = retried.has(key(job)) ? 2 : 1; n <= 2; n++) {
 				record = await attempt(job, n);
 				appendFileSync(spendPath, `${JSON.stringify({ key: key(job), jobName: record.jobName, metered: record.usage !== null, chargedUsd: record.usage ? record.usage.costUsd : capUsd })}\n`);
 				if (!record.infra) break;
