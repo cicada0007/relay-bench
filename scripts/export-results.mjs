@@ -228,6 +228,7 @@ const tests = [];
 // ---- Test F: Terminal-Bench 2.1 through Harbor, Haiku 5.5.
 {
 	const records = jsonl(join(OUT, "F", "records.jsonl")).filter((r) => r.test === "F");
+	const fSpend = jsonl(join(OUT, "F", "spend.jsonl"));
 	const log = stageLog("F.log", "F");
 	const planned = 356;
 	const trialsDone = new Set(records.map((r) => `${r.task}|${r.tool}|${r.rep}`)).size;
@@ -263,12 +264,15 @@ const tests = [];
 		plannedRuns: planned,
 		runs: trialsDone,
 		capUsd: 45,
-		spentUsd: sum(jsonl(join(OUT, "F", "spend.jsonl")).map((s) => s.chargedUsd ?? 0)),
+		spentUsd: sum(fSpend.map((s) => s.chargedUsd ?? 0)),
+		meteredUsd: sum(fSpend.filter((s) => s.metered).map((s) => s.chargedUsd)),
+		unmeteredAttempts: fSpend.filter((s) => !s.metered).length,
 		droppedTasks: result.dropped,
 		notes: [
 			"89 public tasks, 2 trials per task per tool. Harbor reports no 'said done' signal, so said done but failed is not measured here.",
 			"A task whose infrastructure failed twice is dropped for every tool, and listed.",
-			"Spend includes every attempt, retries included (F/spend.jsonl).",
+			"Spend includes every attempt, retries included (F/spend.jsonl). An attempt whose meter log was lost counts at its full cap, so the stage's spend is an upper bound; meteredUsd is what the meter logged.",
+			"The meter does not price web searches ($10 per 1,000). Claude Code made 6 in test F, so its cost is about $0.06 low; Relay made none.",
 		],
 		tools: byToolOrder(tools),
 		comparisons: comparisonsOut(result.comparisons),
@@ -404,7 +408,7 @@ const output = {
 		),
 	},
 	spend: {
-		note: "Metered model spend in US dollars, from the round's meter. The pilot figure is amendment 2's.",
+		note: "Model spend in US dollars, from the round's meter. The pilot figure is amendment 2's. Test F's figure counts each attempt whose meter log was lost at its full cap, so it is an upper bound (see test F's meteredUsd).",
 		budgetUsd: 400,
 		byTest: spendByTest,
 		totalUsd: sum(Object.values(spendByTest)),

@@ -13,8 +13,8 @@ shows our numbers alone. The closest published numbers are listed below so a rea
 
 | Benchmark | Tool | Model | Official number and source | Our number (round 1) | Comparable? |
 | --- | --- | --- | --- | --- | --- |
-| Terminal-Bench 2.1 (Harbor) | Claude Code | Haiku 5.5 | None. The official 2.1 leaderboard (tbench.ai, 18 entries) has no Haiku model at all. | 84.1% solved (82 trials, 1 per task so far; in progress) | No: no same-model number exists |
-| Terminal-Bench 2.1 (Harbor) | Relay | Haiku 5.5 | None (Relay has never been submitted). | 72.3% solved (83 trials; in progress) | No: no number exists |
+| Terminal-Bench 2.1 (Harbor) | Claude Code | Haiku 5.5 | None. The official 2.1 leaderboard (tbench.ai, 18 entries) has no Haiku model at all. | 83.3% solved (174 trials, 2 per task, 87 tasks) | No: no same-model number exists |
+| Terminal-Bench 2.1 (Harbor) | Relay | Haiku 5.5 | None (Relay has never been submitted). | 71.8% solved (174 trials, 2 per task, 87 tasks) | No: no number exists |
 | OOLONG-synth, yahoo, 128k | Claude Code | Haiku 5.5 | None. Prime Agent's table reports Claude Code only with Opus 5 (high): 0.920. | 2.0% (50 items) | No: different model |
 | OOLONG-synth, yahoo, 128k | Prime Agent | Haiku 5.5 | None. Prime Agent's table reports 0.700 (GLM-5.2 high), 0.900 (Opus 5 high), 0.940 (GPT-5.6 Sol high). | 6.0% (50 items) | No: different models |
 | OOLONG-synth, yahoo, 128k | Relay | Haiku 5.5 | None. | 10.0% (50 items) | No: no number exists |
@@ -23,8 +23,8 @@ shows our numbers alone. The closest published numbers are listed below so a rea
 | LongBench v2 | Relay | Haiku 5.5 | None. | 60.0% (50 of 503 questions) | No: no number exists |
 
 Our numbers were read on 17 October 2026 with Node 22:
-`node runner/tb21-analyze.mjs --out runs/round-1` (test F, still running: 2 of 89 tasks dropped for every tool after
-infrastructure failed twice, `qemu-alpine-ssh` and `qemu-startup`; the second trial per task has not run) and
+`node runner/tb21-analyze.mjs --out runs/round-1` (test F, read again when it finished: 2 of 89 tasks dropped for every tool after
+infrastructure failed twice, `qemu-alpine-ssh` and `qemu-startup`) and
 `node runner/longctx-analyze.mjs --out runs/round-1 --test G`.
 
 ## What was checked, source by source

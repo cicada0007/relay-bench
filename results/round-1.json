@@ -1,9 +1,9 @@
 {
   "round": 1,
-  "generatedAt": "2026-10-16T22:26:34.811Z",
-  "status": "in progress",
+  "generatedAt": "2026-10-17T07:11:10.426Z",
+  "status": "complete",
   "repository": "https://github.com/cicada0007/relay-bench",
-  "commit": "55c7cbef6aaf58e10967d55c01dddd080c5fb30d",
+  "commit": "dd90b73d48458368b3fb272484a019e2916a6859",
   "preregistration": "https://github.com/cicada0007/relay-bench/blob/main/PREREGISTRATION.md",
   "statistics": {
     "unit": "The task (an item in test G). A tool's score on a task is its mean over that task's runs.",
@@ -573,12 +573,14 @@
       "model": "claude-haiku-5-5",
       "measure": "solved",
       "unit": "task",
-      "status": "in progress",
-      "stageLogEnd": null,
+      "status": "complete",
+      "stageLogEnd": "test F finished: $31.1412 spent",
       "plannedRuns": 356,
-      "runs": 202,
+      "runs": 356,
       "capUsd": 45,
-      "spentUsd": 16.062938385000002,
+      "spentUsd": 31.158898975000003,
+      "meteredUsd": 11.158898975000005,
+      "unmeteredAttempts": 20,
       "droppedTasks": [
         "terminal-bench/qemu-alpine-ssh",
         "terminal-bench/qemu-startup"
@@ -586,40 +588,41 @@
       "notes": [
         "89 public tasks, 2 trials per task per tool. Harbor reports no 'said done' signal, so said done but failed is not measured here.",
         "A task whose infrastructure failed twice is dropped for every tool, and listed.",
-        "Spend includes every attempt, retries included (F/spend.jsonl)."
+        "Spend includes every attempt, retries included (F/spend.jsonl). An attempt whose meter log was lost counts at its full cap, so the stage's spend is an upper bound; meteredUsd is what the meter logged.",
+        "The meter does not price web searches ($10 per 1,000). Claude Code made 6 in test F, so its cost is about $0.06 low; Relay made none."
       ],
       "tools": {
         "relay": {
           "name": "Relay",
           "tasks": 87,
-          "runs": 99,
+          "runs": 174,
           "score": 71.83908045977012,
-          "scoreLow": 62.06896551724138,
-          "scoreHigh": 81.03448275862068,
+          "scoreLow": 63.2183908045977,
+          "scoreHigh": 80.45977011494253,
           "checksPassed": null,
-          "allRunsPass": 71.26436781609196,
+          "allRunsPass": 65.51724137931035,
           "saidDoneButFailed": null,
-          "costUsd": 2.35585174,
-          "costPerSolvedUsd": 0.032271941643835615,
-          "medianMinutes": 1.6271,
+          "costUsd": 4.000450165,
+          "costPerSolvedUsd": 0.03200360132,
+          "medianMinutes": 1.5670666666666666,
           "stoppedAtCap": 0,
-          "unmeteredTrials": 1
+          "unmeteredTrials": 0
         },
         "claude-code": {
           "name": "Claude Code",
           "tasks": 87,
-          "runs": 99,
+          "runs": 174,
           "score": 83.33333333333333,
-          "scoreLow": 75.28735632183908,
-          "scoreHigh": 90.80459770114942,
+          "scoreLow": 76.4367816091954,
+          "scoreHigh": 89.65517241379311,
           "checksPassed": null,
-          "allRunsPass": 82.75862068965517,
+          "allRunsPass": 75.86206896551724,
           "saidDoneButFailed": null,
-          "costUsd": 3.4473570200000005,
-          "costPerSolvedUsd": 0.04103996452380953,
-          "medianMinutes": 1.2918666666666667,
+          "costUsd": 6.898719185000003,
+          "costPerSolvedUsd": 0.04757737368965519,
+          "medianMinutes": 1.4331166666666666,
           "stoppedAtCap": 0,
-          "unmeteredTrials": 0
+          "unmeteredTrials": 2
         }
       },
       "comparisons": {
@@ -627,8 +630,8 @@
           "name": "Claude Code",
           "tasks": 87,
           "difference": -11.494252873563218,
-          "low": -21.264367816091955,
-          "high": -1.7241379310344827,
+          "low": -19.54022988505747,
+          "high": -3.4482758620689653,
           "word": "worse"
         }
       }
@@ -861,16 +864,16 @@
     }
   },
   "spend": {
-    "note": "Metered model spend in US dollars, from the round's meter. The pilot figure is amendment 2's.",
+    "note": "Model spend in US dollars, from the round's meter. The pilot figure is amendment 2's. Test F's figure counts each attempt whose meter log was lost at its full cap, so it is an upper bound (see test F's meteredUsd).",
     "budgetUsd": 400,
     "byTest": {
       "pilot": 19.52,
       "A": 185.69183660000002,
       "B": 62.580731555,
       "D": 16.965174345,
-      "F": 16.062938385000002,
+      "F": 31.158898975000003,
       "G": 1.5004829999999987
     },
-    "totalUsd": 302.321163885
+    "totalUsd": 317.417124475
   }
 }
