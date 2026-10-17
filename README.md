@@ -1,10 +1,10 @@
 # relay-bench
 
-An open benchmark of [Relay](https://relayevals.com), a coding-agent harness built on
-[Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent), against the tools people use directly: Claude Code,
-Codex, Hermes and Prime Agent itself, each on the same model as Relay.
+An open benchmark of [Relay](https://relayevals.com), a coding-agent harness built by Relay, against the tools people
+use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model as Relay.
 
-**Status:** round 1 is pre-registered. Nothing has run yet.
+**Status:** round 1 is complete. Its numbers are in [results/](results/) and on
+[relayevals.com/ai-coding-agent-benchmark](https://relayevals.com/ai-coding-agent-benchmark).
 
 - [PREREGISTRATION.md](PREREGISTRATION.md) fixes the tests, measures, statistics and the words we may use about the
   results, before the first paid run. Its commit date is the record.
@@ -13,5 +13,7 @@ Codex, Hermes and Prime Agent itself, each on the same model as Relay.
 
 Anyone will be able to re-run each test on their own API key with one command. The cheapest test is planned to cost
 about $30 to repeat.
+
+relay-bench is built and maintained by Relay. Questions: arnav@relayevals.com.
 
 Released under the [MIT License](LICENSE).

@@ -6,8 +6,7 @@ message, and the results page links to it.
 
 ## What is compared
 
-Relay, an open coding-agent harness built on [Prime Agent](https://github.com/PrimeIntellect-ai/prime-agent), against
-the tools people use directly, **on the same model**:
+Relay, a coding-agent harness built by Relay, against the tools people use directly, **on the same model**:
 
 | Model | Tools |
 | --- | --- |
@@ -107,7 +106,7 @@ Test A is never shrunk. If it cannot run in full, the round stops and the decisi
 - Where our run of another tool scores below that tool's own official public number on the same benchmark and model,
   the table shows the official number and says so.
 - No model is trained around Relay or Prime Agent. The models of Claude Code and Codex are trained around them.
-- Relay is built on Prime Agent. Results Prime Intellect published for Prime Agent belong to Prime Agent.
+- We build Relay and run this comparison. The judges sit outside every tool's repository.
 - A flat learning curve in test E is published like any other result.
 
 ## What gets published
@@ -186,3 +185,8 @@ Haiku 5.5. Every change below applies before any counted run; the pilot's record
 - **Tests run in round 1:** A, B and D, then F (Terminal-Bench 2.1) and G (two long-context sets) once their runners
   are built, within the $400. **Not run in round 1:** C, because the round has no OpenAI credit, and E, because it needs
   a Relay change (lessons that can be held still) and 60 further tasks. The results page lists both as not run.
+
+### 4. Wording only (18 October 2026, after round 1)
+
+The description of Relay under "What is compared" and one honesty note were reworded. No test, measure, statistic,
+word rule or result changed. The earlier wording is in this file's history.
