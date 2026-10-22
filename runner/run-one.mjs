@@ -18,7 +18,7 @@ import { gzipSync } from "node:zlib";
 import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
-import { ARMS, REQUEST, saidDone, WORK } from "./arms.mjs";
+import { ARMS, armFor, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
 import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -42,8 +42,10 @@ const { values: args } = parseArgs({
 for (const name of ["task", "tool", "model", "cap-usd"]) {
 	if (!args[name]) throw new Error(`--${name} is required`);
 }
-const arm = ARMS[args.tool];
-if (!arm) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}`);
+const resolved = armFor(args.tool);
+if (!resolved) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}, relay@<version>, relay@pkg`);
+const { arm } = resolved;
+if (resolved.relayPackage && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package");
 if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
 if (args["relay-package"] && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only");
 const key = process.env.RELAY_BENCH_ANTHROPIC_KEY;
@@ -164,6 +166,15 @@ try {
 		);
 		if (installed.exitCode !== 0) throw new Error(`installing the Relay package failed: ${installed.stderr.slice(-400)}`);
 		record.relayPackageVersion = installed.stdout.trim().split("\n").pop();
+	}
+	// A gate arm (GATE.md): this run's Relay is the released version its name gives, installed by Relay's own installer.
+	if (resolved.relayVersion) {
+		const installed = await sh(work, relayInstallCommand(resolved.relayVersion));
+		const printed = installed.stdout.trim().split("\n").pop() ?? "";
+		if (installed.exitCode !== 0 || !printed.includes(resolved.relayVersion)) {
+			throw new Error(`installing Relay ${resolved.relayVersion} failed: ${(installed.stderr || printed).slice(-400)}`);
+		}
+		record.relayVersion = printed;
 	}
 
 	// The meter runs as root at api.anthropic.com inside this sandbox, so no tool's endpoint setting changes, and its

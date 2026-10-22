@@ -115,6 +115,34 @@ export const ARMS = {
 	},
 };
 
+/** A released Relay version, as the installer's RELAY_VERSION takes it: 0.6.121, or a beta such as 0.6.122-beta.3. */
+export const RELAY_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
+
+/**
+ * The arm for a tool name. `relay@<version>` is Relay at that released version, installed for the run (GATE.md); the
+ * gate compares two of them. `relay@pkg` is Relay from --relay-package, for pre-screens only. Every other name is an
+ * arm of ARMS as it is.
+ */
+export function armFor(tool) {
+	const at = tool.indexOf("@");
+	if (at === -1) {
+		const arm = ARMS[tool];
+		return arm ? { arm, base: tool, relayVersion: null, relayPackage: false } : null;
+	}
+	const base = tool.slice(0, at);
+	const spec = tool.slice(at + 1);
+	if (base !== "relay") return null;
+	if (spec === "pkg") return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true };
+	if (!RELAY_VERSION_PATTERN.test(spec)) return null;
+	return { arm: ARMS.relay, base, relayVersion: spec, relayPackage: false };
+}
+
+/** The installer command that puts one released Relay version in place for the sandbox user, kernel included. */
+export function relayInstallCommand(version) {
+	if (!RELAY_VERSION_PATTERN.test(version)) throw new Error(`not a released Relay version: ${version}`);
+	return `curl -fsSL https://relayevals.com/harness/install.sh | RELAY_VERSION=${version} RELAY_BOOTSTRAP_KERNEL_ON_INSTALL=1 DO_NOT_TRACK=1 sh && relay --version`;
+}
+
 function primeCommand({ model, gates, limitMinutes, prompt, extra }) {
 	return [
 		"prime-agent -p --autonomous",
@@ -129,6 +157,7 @@ function primeCommand({ model, gates, limitMinutes, prompt, extra }) {
 
 /** What the tool itself said about finishing, read from its own output. */
 export function saidDone(tool, { exitCode, stdout, relayMerge }) {
+	tool = armFor(tool)?.base ?? tool;
 	if (tool === "claude-code") {
 		const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
 		try {
