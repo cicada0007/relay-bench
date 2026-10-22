@@ -5,11 +5,20 @@
 // it is written to review/ (gitignored) and published only as a private artifact.
 //
 //   node scripts/build-review-page.mjs            -> review/task-review.html
+//
+// For the private exam (TIERS.md), the same page shows each exam or check task with who drafted it, where it came from,
+// whether a founder has approved it, and the command that approves it (scripts/approve-task.mjs). That page is written
+// beside the exam's tasks, outside this public repository, and the script never publishes it:
+//
+//   node scripts/build-review-page.mjs --tasks-dir ../relay-exam/tasks   -> ../relay-exam/review/exam-review.html
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import { approvalProblems, isSealed } from "./approve-task.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const TASKS = join(ROOT, "tasks");
+const { values: options } = parseArgs({ options: { "tasks-dir": { type: "string" }, to: { type: "string" } } });
+const TASKS = resolve(options["tasks-dir"] ?? join(ROOT, "tasks"));
 const TEST_DIRS = new Set(["test", "tests", "node_modules", ".git"]);
 
 function walk(dir, visit) {
@@ -129,11 +138,39 @@ for (const id of readdirSync(TASKS).sort()) {
 		})(),
 		kind: task.kind,
 		checks,
+		...(isSealed(task)
+			? {
+					exam: {
+						tier: task.tier,
+						draftedBy: task.draftedBy ?? null,
+						draftedAt: task.draftedAt ?? null,
+						source: task.source ?? null,
+						approvedBy: task.approvedBy ?? null,
+						approvedAt: task.approvedAt ?? null,
+						problems: approvalProblems(task),
+						approveCommand: `node scripts/approve-task.mjs ${id} --by <your name> --tasks-dir ${relative(ROOT, TASKS) || "."}`,
+					},
+				}
+			: {}),
 	});
 }
+const sealed = tasks.some((t) => t.exam);
+const inside = (path) => {
+	const rel = relative(ROOT, resolve(path));
+	return !rel.startsWith("..") && !isAbsolute(rel);
+};
+const to = resolve(options.to ?? (sealed ? join(dirname(TASKS), "review", "exam-review.html") : join(ROOT, "review", "task-review.html")));
+if (sealed && inside(to)) throw new Error(`the page holds exam tasks; write it outside this public repository, not to ${to}`);
+const heading = sealed
+	? {
+			eyebrow: "relay exam · private · approval",
+			lede: "Read each exam task beside the checks its hidden judge runs. A task counts only after a founder who did not draft it approves it with the command shown on the task; this page only reads. Marks on parts are notes for fixing a task before it is approved.",
+		}
+	: null;
 
 const template = readFileSync(join(ROOT, "scripts", "review-page.template.html"), "utf8");
-const data = JSON.stringify({ builtAt: new Date().toISOString(), tasks }).replaceAll("<", "\\u003c").replaceAll("\uFFFD", "\\ufffd");
-mkdirSync(join(ROOT, "review"), { recursive: true });
-writeFileSync(join(ROOT, "review", "task-review.html"), template.replace("__REVIEW_DATA__", () => data));
-console.log(`review/task-review.html: ${tasks.length} tasks (${tasks.filter((t) => !t.checks).length} without CHECKS.md)`);
+const data = JSON.stringify({ builtAt: new Date().toISOString(), heading, tasks }).replaceAll("<", "\\u003c").replaceAll("\uFFFD", "\\ufffd");
+mkdirSync(dirname(to), { recursive: true });
+writeFileSync(to, template.replace("__REVIEW_DATA__", () => data));
+const waiting = tasks.filter((t) => t.exam && t.exam.problems.length).length;
+console.log(`${relative(process.cwd(), to)}: ${tasks.length} tasks (${tasks.filter((t) => !t.checks).length} without CHECKS.md)${sealed ? `, ${waiting} waiting for approval` : ""}`);

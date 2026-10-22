@@ -10,9 +10,10 @@
 //   node runner/run-stage.mjs --test A --model claude-sonnet-5-5 --tools relay,prime-agent,claude-code \
 //     --tasks kind:long --reps 3 --cap-usd 10 --stage-cap-usd 170 --e2b-cap-usd 40 --concurrency 4 --out runs/round-1
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { sealedProblems, selectTasks } from "./stage-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -39,25 +40,21 @@ const counted = !/^(pilot|dev)/.test(args.test);
 /** E2B, 2 vCPU + 4 GiB, checked 15 Oct 2026 at e2b.dev/pricing: $0.000046 per second. */
 const E2B_USD_PER_SECOND = 0.000046;
 const out = join(ROOT, args.out);
-mkdirSync(out, { recursive: true });
 const recordsPath = join(out, "records.jsonl");
 const tools = args.tools.split(",");
 const capUsd = Number(args["cap-usd"]);
 const stageCap = Number(args["stage-cap-usd"]);
 const e2bCap = Number(args["e2b-cap-usd"]);
 
-/** --tasks: a comma list of task ids and kind:<kind> selectors (kind:long,kind:everyday), in that order. */
-function taskIds() {
-	const all = readdirSync(args["tasks-dir"]).filter((id) => existsSync(join(args["tasks-dir"], id, "task.json"))).sort();
-	const kindOf = (id) => JSON.parse(readFileSync(join(args["tasks-dir"], id, "task.json"), "utf8")).kind;
-	const ids = [];
-	for (const item of args.tasks.split(",")) {
-		for (const id of item.startsWith("kind:") ? all.filter((t) => kindOf(t) === item.slice(5)) : [item]) {
-			if (!ids.includes(id)) ids.push(id);
-		}
-	}
-	return ids;
+/** --tasks: a comma list of task ids and kind:<kind> or tier:<tier> selectors (kind:long,tier:exam), in that order. */
+const taskIds = () => selectTasks(args.tasks, args["tasks-dir"]);
+// The exam and check tiers stay sealed (TIERS.md): their tasks come from, and their runs go to, folders outside this
+// public repository. This holds for every test, counted or not.
+{
+	const problems = sealedProblems({ ids: taskIds(), tasksDir: args["tasks-dir"], out });
+	if (problems.length) throw new Error(`${problems.join("; ")}; nothing was run`);
 }
+mkdirSync(out, { recursive: true });
 /** Test D's faults, one run per fault; every other test runs without one. */
 const faults = args.faults ? args.faults.split(",") : [undefined];
 
@@ -71,7 +68,7 @@ if (counted) {
 	const differences = lockDifferences(taskIds(), args["tasks-dir"]);
 	if (differences.length) {
 		for (const d of differences) console.error(`${d.id}: ${d.what}`);
-		throw new Error(`test ${args.test} is counted and its tasks do not match their lock; nothing was run`);
+		throw new Error(`test ${args.test} is counted and its tasks do not match their lock or are not approved; nothing was run`);
 	}
 }
 

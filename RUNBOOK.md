@@ -165,5 +165,74 @@ same tasks, model and limits, and exits 0 (PASS), 10 (BLOCK) or 20 (UNRESOLVED).
 3. **Read it again later:** the same command without `--run`. The verdict is also saved as
    `runs/gate/<test>.gate.json`.
 
-On the exam tier, pass `--tier exam --tasks-dir <private exam repository>/tasks`; the gate refuses a folder inside this
-repository, and lock the exam first with `node scripts/lock-tasks.mjs --tasks-dir <that folder>`.
+On the exam tier, pass `--tier exam --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate`: the gate then runs
+every exam-tier task in that folder, refuses a tasks folder inside this repository, and refuses to write exam runs inside
+it. Lock the exam first with `node scripts/lock-tasks.mjs --tasks-dir ../relay-exam/tasks`; an exam task that is not
+approved stops a counted gate.
+
+## Growing the exam
+
+**Not yet run.** Every command below is built and tested on recorded and made-up data only. TIERS.md says how a task is
+made and why. Run from this folder, with the private exam repository checked out beside it at `../relay-exam`. The
+candidates, tasks, review page, runs and hand-check sheets all stay in that repository; every script here refuses to
+write them inside this one.
+
+What it needs, in the environment (never on the command line):
+
+- `GITHUB_TOKEN`: any token that can read public repositories (a fine-grained token with public read-only access; no
+  scopes). The miner only sends GET requests. GitHub allows 30 searches a minute and 5,000 other requests an hour; the
+  miner keeps to both.
+- `OPENAI_API_KEY`, for drafting only: one Responses API call per task that passes its judge check. Estimate: 2,000 to
+  6,000 tokens a call, about $0.01 to $0.05 on GPT-6.1 Sol ($2 input, $10 output per million), so about $5 to $20 for
+  400 tasks. A candidate whose judge does not validate makes no call.
+- No E2B and no Anthropic key: mining, drafting and validating run on this machine (git, Node 22, Python 3).
+
+1. **Find candidates** (free; read-only GitHub). `--cutoff` is a placeholder: set it to the latest training cutoff among
+   the models the exam will test, from each model's own page, before mining.
+
+   ```
+   node scripts/mine-tasks.mjs --cutoff 2026-07-01 --out ../relay-exam/candidates.jsonl --limit 100
+   ```
+
+   Run it again to add more; it skips pull requests already in the file. `--verbose` prints why each one was left out.
+   Expect few Node candidates: most Node projects need packages from the network, which tasks may not.
+
+2. **Draft each candidate** (paid: one OpenAI call per task that passes its judge check).
+
+   ```
+   node scripts/draft-task.mjs --candidate <id> --candidates ../relay-exam/candidates.jsonl \
+     --tasks-dir ../relay-exam/tasks --model gpt-6.1-sol --tier exam
+   ```
+
+   `--tier check` drafts a check-tier task instead. All of them, one after another:
+
+   ```
+   for id in $(node -e 'require("fs").readFileSync("../relay-exam/candidates.jsonl","utf8").split("\n").filter(Boolean).forEach(l=>console.log(JSON.parse(l).id))'); do
+     [ -d ../relay-exam/tasks/$id ] || node scripts/draft-task.mjs --candidate $id \
+       --candidates ../relay-exam/candidates.jsonl --tasks-dir ../relay-exam/tasks --model gpt-6.1-sol --tier exam
+   done
+   ```
+
+3. **Validate** every drafted task (free): `node scripts/validate-task.mjs --tasks-dir ../relay-exam/tasks <id> [<id> ...]`.
+   Remove a task that fails.
+
+4. **Review and approve** (a founder who did not draft the task). Build the review page, open it locally, and read each
+   task's request beside its checks:
+
+   ```
+   node scripts/build-review-page.mjs --tasks-dir ../relay-exam/tasks     # -> ../relay-exam/review/exam-review.html
+   node scripts/approve-task.mjs <id> --by <your name> --tasks-dir ../relay-exam/tasks
+   ```
+
+5. **Lock** the exam, then commit `TASKS.lock.json` and the tasks in the exam repository:
+   `node scripts/lock-tasks.mjs --tasks-dir ../relay-exam/tasks`. `--check` shows what differs or is not approved.
+
+6. **Each month, check the judges by hand** (free). Draw 1 run in 10 of a test's runs into a sheet, mark every row
+   agree or disagree in a spreadsheet, then read the agreement; a judge below 90% is flagged and the command exits 1:
+
+   ```
+   node scripts/handcheck.mjs --records ../relay-exam/runs/bar/records.jsonl --tasks-dir ../relay-exam/tasks --test bar-1-haiku
+   node scripts/grader-agreement.mjs ../relay-exam/runs/bar/handcheck-<date>-bar-1-haiku.csv
+   ```
+
+   Fix a flagged judge for every tool alike, then grade its runs again with `runner/rejudge.mjs`.
