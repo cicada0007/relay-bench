@@ -9,11 +9,15 @@
 //
 //   node runner/run-stage.mjs --test A --model claude-sonnet-5-5 --tools relay,prime-agent,claude-code \
 //     --tasks kind:long --reps 3 --cap-usd 10 --stage-cap-usd 170 --e2b-cap-usd 40 --concurrency 4 --out runs/round-1
+//
+// --sample <n> runs a fixed sample of n of the chosen tasks (a shuffle seeded 20261015). The sample is saved as
+// <out>/<test>.tasks.json on the first real run, and a resumed stage reads it back, so it never changes mid-stage.
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { sealedProblems, selectTasks } from "./stage-tasks.mjs";
+import { armFor, armRuns, providerOf } from "./arms.mjs";
+import { sampleIds, sealedProblems, selectTasks } from "./stage-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -31,6 +35,7 @@ const { values: args } = parseArgs({
 		"tasks-dir": { type: "string", default: join(ROOT, "tasks") },
 		"dry-run": { type: "boolean", default: false },
 		faults: { type: "string" },
+		sample: { type: "string" },
 	},
 });
 for (const name of ["test", "model", "cap-usd", "stage-cap-usd"]) if (!args[name]) throw new Error(`--${name} is required`);
@@ -42,12 +47,30 @@ const E2B_USD_PER_SECOND = 0.000046;
 const out = join(ROOT, args.out);
 const recordsPath = join(out, "records.jsonl");
 const tools = args.tools.split(",");
+// Every tool must run this model's provider; otherwise each of its runs would fail as if our infrastructure had.
+for (const tool of tools) {
+	const resolved = armFor(tool);
+	if (!resolved) throw new Error(`unknown tool ${tool}`);
+	if (!armRuns(resolved.arm, args.model)) throw new Error(`${tool} does not run ${providerOf(args.model)} models such as ${args.model}; nothing was run`);
+}
 const capUsd = Number(args["cap-usd"]);
 const stageCap = Number(args["stage-cap-usd"]);
 const e2bCap = Number(args["e2b-cap-usd"]);
 
-/** --tasks: a comma list of task ids and kind:<kind> or tier:<tier> selectors (kind:long,tier:exam), in that order. */
-const taskIds = () => selectTasks(args.tasks, args["tasks-dir"]);
+/** --tasks: a comma list of task ids and kind:<kind> or tier:<tier> selectors (kind:long,tier:exam), in that order;
+ *  with --sample, the stage's saved sample of them. */
+const samplePath = join(out, `${args.test}.tasks.json`);
+const chosen = selectTasks(args.tasks, args["tasks-dir"]);
+let sampled;
+if (args.sample) {
+	const n = Number(args.sample);
+	if (!Number.isInteger(n) || n < 1) throw new Error("--sample must be a whole number of tasks");
+	sampled = existsSync(samplePath) ? JSON.parse(readFileSync(samplePath, "utf8")).tasks : sampleIds(chosen, n);
+	const strays = sampled.filter((id) => !chosen.includes(id));
+	if (strays.length) throw new Error(`the saved sample ${samplePath} holds tasks --tasks no longer chooses: ${strays.join(", ")}`);
+	if (sampled.length < Math.min(n, chosen.length)) throw new Error(`the saved sample has ${sampled.length} tasks, not ${n}`);
+}
+const taskIds = () => sampled ?? chosen;
 // The exam and check tiers stay sealed (TIERS.md): their tasks come from, and their runs go to, folders outside this
 // public repository. This holds for every test, counted or not.
 {
@@ -55,6 +78,9 @@ const taskIds = () => selectTasks(args.tasks, args["tasks-dir"]);
 	if (problems.length) throw new Error(`${problems.join("; ")}; nothing was run`);
 }
 mkdirSync(out, { recursive: true });
+if (sampled && !args["dry-run"] && !existsSync(samplePath)) {
+	writeFileSync(samplePath, `${JSON.stringify({ test: args.test, tasks: sampled, from: chosen.length, seed: 20261015, at: new Date().toISOString() }, null, 2)}\n`);
+}
 /** Test D's faults, one run per fault; every other test runs without one. */
 const faults = args.faults ? args.faults.split(",") : [undefined];
 
@@ -106,7 +132,7 @@ function runOne(job) {
 		let text = "";
 		child.stdout.on("data", (c) => (text += c));
 		child.stderr.on("data", (c) => (text += c));
-		child.on("close", (code) => resolve({ code, text: text.replace(/(sk-ant-|e2b_)[A-Za-z0-9_-]{8,}/g, "$1[MASKED]") }));
+		child.on("close", (code) => resolve({ code, text: text.replace(/(sk-(?:ant-|proj-|svcacct-|admin-)?|e2b_)[A-Za-z0-9_-]{8,}/g, "$1[MASKED]") }));
 	});
 }
 

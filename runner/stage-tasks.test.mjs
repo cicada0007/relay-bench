@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { insideRepo, ROOT, sealedProblems, selectTasks } from "./stage-tasks.mjs";
+import { insideRepo, ROOT, sampleIds, sealedProblems, selectTasks } from "./stage-tasks.mjs";
 
 function folder(tasks, parent = tmpdir()) {
 	const dir = mkdtempSync(join(parent, "stage-tasks-"));
@@ -41,4 +41,15 @@ test("exam and check tasks run only from, and into, folders outside this public 
 		rmSync(outside, { recursive: true, force: true });
 		rmSync(inside, { recursive: true, force: true });
 	}
+});
+
+test("a sample is a fixed draw: the same ids and seed give the same tasks, whatever order they came in", () => {
+	const ids = Array.from({ length: 400 }, (_, i) => `t-${String(i).padStart(3, "0")}`);
+	const a = sampleIds(ids, 100);
+	assert.equal(a.length, 100);
+	assert.equal(new Set(a).size, 100);
+	assert.deepEqual(a, [...a].sort());
+	assert.deepEqual(sampleIds([...ids].reverse(), 100), a);
+	assert.notDeepEqual(sampleIds(ids, 100, 7), a);
+	assert.deepEqual(sampleIds(ids.slice(0, 3), 100), ids.slice(0, 3));
 });

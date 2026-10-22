@@ -1,0 +1,8 @@
+data: {"id": "chatcmpl-fixture2", "object": "chat.completion.chunk", "created": 1792700000, "model": "gpt-6.1-sol-2026-09-30", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Do"}, "finish_reason": null}], "usage": null}
+
+data: {"id": "chatcmpl-fixture2", "object": "chat.completion.chunk", "created": 1792700000, "model": "gpt-6.1-sol-2026-09-30", "choices": [{"index": 0, "delta": {"content": "ne."}, "finish_reason": "stop"}], "usage": null}
+
+data: {"id": "chatcmpl-fixture2", "object": "chat.completion.chunk", "created": 1792700000, "model": "gpt-6.1-sol-2026-09-30", "service_tier": "priority", "choices": [], "usage": {"prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540, "prompt_tokens_details": {"cached_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 0}}}
+
+data: [DONE]
+
