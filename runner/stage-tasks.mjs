@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isSealed } from "../scripts/approve-task.mjs";
+import { rng, SEED } from "./analyze.mjs";
 
 export const ROOT = new URL("..", import.meta.url).pathname;
 
@@ -46,4 +47,15 @@ export function sealedProblems({ ids, tasksDir, out, root = ROOT }) {
 	if (insideRepo(tasksDir, root)) problems.push(`${sealed.length} exam or check tasks are in ${tasksDir}, inside this public repository`);
 	if (insideRepo(out, root)) problems.push(`runs of exam or check tasks must be written outside this public repository; ${out} is inside it`);
 	return problems;
+}
+
+/** A fixed sample of `n` of the chosen tasks: a seeded shuffle of the ids in sorted order, the first n, sorted again. */
+export function sampleIds(ids, n, seed = SEED) {
+	const pool = [...ids].sort();
+	const next = rng(seed);
+	for (let i = pool.length - 1; i > 0; i--) {
+		const j = Math.floor(next() * (i + 1));
+		[pool[i], pool[j]] = [pool[j], pool[i]];
+	}
+	return pool.slice(0, n).sort();
 }

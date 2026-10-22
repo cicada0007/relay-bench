@@ -15,6 +15,10 @@ export const PINS = Object.freeze({
 	primeAgent: "0.10.0",
 	claudeCode: "2.1.300",
 	hermes: "0.22.2",
+	/** Codex CLI, for the comparison on an OpenAI model: 0.163.0, released 15 Oct 2026 (npm @openai/codex). Its flags
+	 *  were read from this version's `codex exec --help` (runner/arms.mjs). Added after round 1; the image must be built
+	 *  again before Codex runs. */
+	codex: "0.163.0",
 });
 
 /** PATH inside a run: where each tool's installer puts its command for the sandbox user. */
@@ -35,6 +39,7 @@ export function benchTemplate() {
 			.setUser("root")
 			.aptInstall(["python3", "python3-venv", "git", "curl", "ca-certificates", "procps", "jq"], { noInstallRecommends: true })
 			.runCmd(`npm install -g --no-fund --no-audit @anthropic-ai/claude-code@${PINS.claudeCode}`)
+			.runCmd(`npm install -g --no-fund --no-audit @openai/codex@${PINS.codex}`)
 			.copy("meter/meter.mjs", "/opt/relay-bench/meter.mjs", { mode: 0o755 })
 			// Relay and Prime Agent install for the sandbox user, where their kernels and settings live at run time.
 			// Both kernels are ready when a run starts: Prime Agent's installer sets its kernel up as part of a normal
@@ -52,7 +57,8 @@ export function benchTemplate() {
 			.runCmd(
 				`export PATH=${RUN_PATH}; ` +
 					"echo relay $(relay --version | tail -1); echo prime-agent $(prime-agent --version 2>&1 | tail -1); " +
-					"echo claude $(claude --version); echo hermes $(hermes --version 2>&1 | head -1); echo node $(node --version); echo $(python3 --version)",
+					"echo claude $(claude --version); echo hermes $(hermes --version 2>&1 | head -1); echo codex $(codex --version); " +
+					"echo node $(node --version); echo $(python3 --version)",
 			)
 	);
 }

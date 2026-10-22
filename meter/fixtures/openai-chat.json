@@ -1,0 +1,28 @@
+{
+ "id": "chatcmpl-fixture",
+ "object": "chat.completion",
+ "created": 1792700000,
+ "model": "gpt-6-sol-2026-06-01",
+ "service_tier": "flex",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "Done."
+   },
+   "finish_reason": "stop"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 1000,
+  "completion_tokens": 200,
+  "total_tokens": 1200,
+  "prompt_tokens_details": {
+   "cached_tokens": 600
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 50
+  }
+ }
+}

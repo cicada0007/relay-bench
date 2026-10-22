@@ -5,7 +5,7 @@
 // - 95% interval: bootstrap over tasks, 10,000 resamples, seed 20261015, percentile interval.
 // - The word comes from the interval only: much better (> +15 points), better (> 0), no clear difference, worse (< 0).
 //
-//   node runner/analyze.mjs --out runs/round-1 --test A [--json]
+//   node runner/analyze.mjs --out runs/round-1 --test A [--json] [--relay relay@0.6.121]
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
@@ -50,7 +50,9 @@ export function word({ low, high }) {
 	return "no clear difference";
 }
 
-export function analyze(records) {
+/** One test's analysis. `relay` names Relay's arm in the records: "relay" in round 1, "relay@<version>" when a stage
+ *  ran a released version (the bar on the exam); every comparison is that arm minus each other tool. */
+export function analyze(records, { relay: relayTool = "relay" } = {}) {
 	const byTool = new Map();
 	for (const r of records) {
 		if (!byTool.has(r.tool)) byTool.set(r.tool, new Map());
@@ -79,11 +81,11 @@ export function analyze(records) {
 			})(),
 		};
 	}
-	const relay = byTool.get("relay");
+	const relay = byTool.get(relayTool);
 	const comparisons = {};
 	if (relay) {
 		for (const [tool, tasks] of byTool) {
-			if (tool === "relay") continue;
+			if (tool === relayTool) continue;
 			const shared = [...tasks.keys()].filter((t) => relay.has(t));
 			if (shared.length < 2) continue;
 			const diffs = shared.map(
@@ -120,11 +122,16 @@ export function loadRecords(out, test) {
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
 	const { values: args } = parseArgs({
-		options: { out: { type: "string", default: "runs/round-1" }, test: { type: "string" }, json: { type: "boolean", default: false } },
+		options: {
+			out: { type: "string", default: "runs/round-1" },
+			test: { type: "string" },
+			json: { type: "boolean", default: false },
+			relay: { type: "string", default: "relay" },
+		},
 	});
 	if (!args.test) throw new Error("--test is required");
 	const records = loadRecords(args.out, args.test);
-	const result = analyze(records);
+	const result = analyze(records, { relay: args.relay });
 	if (args.json) {
 		console.log(JSON.stringify(result, null, 2));
 	} else {
@@ -135,7 +142,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			console.log(`${tool.padEnd(13)} ${String(s.tasks).padStart(5)} ${String(s.runs).padStart(4)}  ${f(s.score).padStart(5)}  ${f(s.checksPassed).padStart(6)}  ${f(s.allRunsPass).padStart(13)}  ${f(s.saidDoneButFailed).padStart(16)}  ${s.costPerSolvedUsd === null ? "–" : `$${s.costPerSolvedUsd.toFixed(3)}`.padStart(11)}  ${f(s.medianMinutes).padStart(10)}`);
 		}
 		for (const [tool, c] of Object.entries(result.comparisons)) {
-			console.log(`Relay minus ${tool}: ${f(c.difference)} points, 95% interval ${f(c.low)} to ${f(c.high)} over ${c.tasks} tasks: ${c.word}`);
+			console.log(`${args.relay === "relay" ? "Relay" : args.relay} minus ${tool}: ${f(c.difference)} points, 95% interval ${f(c.low)} to ${f(c.high)} over ${c.tasks} tasks: ${c.word}`);
 		}
 	}
 }

@@ -1,7 +1,7 @@
 // How each tool runs, unattended, inside a benchmark sandbox: its config files, its command, and how its own claim of
 // being done is read. Every tool gets the same model, time limit and spend cap (enforced by the meter). No tool's
-// endpoint is changed: the meter answers at api.anthropic.com inside the sandbox (sandbox/meter-intercept.sh).
-// Settings not named here are the tool's defaults.
+// endpoint is changed: the meter answers at api.anthropic.com and api.openai.com inside the sandbox
+// (sandbox/meter-intercept.sh). Settings not named here are the tool's defaults.
 
 /** The meter's plain-HTTP door, for Prime Agent only (see its arm). Same process, log and spend cap as the main one. */
 export const METER_PLAIN_URL = "http://127.0.0.1:8787";
@@ -32,6 +32,13 @@ function modelEntry(model) {
 		maxTokens: 128_000,
 	};
 }
+/** The provider of a test model, from its id: Claude models are Anthropic's; GPT and o-series models are OpenAI's. */
+export function providerOf(model) {
+	if (/^claude-/.test(model)) return "anthropic";
+	if (/^(gpt-|o\d)/.test(model)) return "openai";
+	throw new Error(`no provider known for model ${model}`);
+}
+
 export const WORK = "/home/user/work";
 export const REQUEST = "/home/user/request.md";
 
@@ -44,14 +51,20 @@ const quote = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 export const ARMS = {
 	relay: {
 		label: "Relay",
-		/** Relay through its queue, one model on every tier. */
-		files: ({ model }) => ({
-			"/home/user/.relay/agent/settings.json": JSON.stringify({
-				defaultProvider: "anthropic",
-				defaultModel: model,
-				models: { tiers: { decider: `anthropic/${model}`, strong: `anthropic/${model}`, fast: `anthropic/${model}` } },
-			}),
-		}),
+		providers: ["anthropic", "openai"],
+		/** Relay through its queue, one model on every tier, from the model's own provider: on an OpenAI model (the Codex
+		 *  comparison) it is Relay's "openai" provider, which reads OPENAI_API_KEY and calls api.openai.com, where the
+		 *  meter answers. */
+		files: ({ model }) => {
+			const provider = providerOf(model);
+			return {
+				"/home/user/.relay/agent/settings.json": JSON.stringify({
+					defaultProvider: provider,
+					defaultModel: model,
+					models: { tiers: { decider: `${provider}/${model}`, strong: `${provider}/${model}`, fast: `${provider}/${model}` } },
+				}),
+			};
+		},
 		command: ({ capUsd }) =>
 			`relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
 		/** The queue keeps its plan and tasks on disk; running it again picks up where it stopped. */
@@ -62,6 +75,7 @@ export const ARMS = {
 	},
 	"prime-agent": {
 		label: "Prime Agent",
+		providers: ["anthropic"],
 		/** Prime Agent's documented unattended mode, gated on the task's own checks. Its turn, token, continuation and
 		 *  time limits are raised to the round's shared limits so its defaults (12 turns, 80,000 tokens, 30 minutes)
 		 *  do not stop a 3-hour request early; the meter's spend cap is the limit that binds, as for every tool. */
@@ -84,6 +98,7 @@ export const ARMS = {
 	},
 	"claude-code": {
 		label: "Claude Code",
+		providers: ["anthropic"],
 		files: () => ({}),
 		/** Headless mode with permissions skipped inside the sandbox. Every Claude Code model tier is pinned to the
 		 *  test model so its background requests do not use a second model. */
@@ -104,6 +119,7 @@ export const ARMS = {
 	},
 	hermes: {
 		label: "Hermes",
+		providers: ["anthropic"],
 		files: () => ({}),
 		/** Hermes's one-shot mode with command approvals off inside the sandbox (--yolo), on the test model. It reaches
 		 *  the meter at api.anthropic.com like Claude Code and Relay, so it keeps the model's thinking between steps. */
@@ -113,7 +129,25 @@ export const ARMS = {
 		env: () => ({}),
 		result: "working-tree",
 	},
+	codex: {
+		label: "Codex",
+		providers: ["openai"],
+		files: () => ({}),
+		/** Codex CLI's documented unattended mode, `codex exec` (pinned in sandbox/template.mjs), on the test model, with
+		 *  approvals and its own sandbox off inside the benchmark's sandbox, as its help says that flag is for
+		 *  ("environments that are externally sandboxed"); the same as Claude Code's skipped permissions. --json prints
+		 *  its events, which saidDone reads. Its key is CODEX_API_KEY, the variable its docs name for `codex exec`.
+		 *  stdin is closed: with a prompt given, `codex exec` would also wait to read piped stdin. */
+		command: ({ model }) => `codex exec --json -m ${model} --dangerously-bypass-approvals-and-sandbox "$(cat ${REQUEST})" < /dev/null`,
+		/** Its documented `codex exec resume --last`: the most recent session, with the same settings. */
+		resume: ({ model }) => `codex exec resume --last --json -m ${model} --dangerously-bypass-approvals-and-sandbox ${quote(RESUME_PROMPT)} < /dev/null`,
+		env: () => ({}),
+		result: "working-tree",
+	},
 };
+
+/** Whether a tool's arm can run a model, by provider. */
+export const armRuns = (arm, model) => (arm.providers ?? ["anthropic"]).includes(providerOf(model));
 
 /** A released Relay version, as the installer's RELAY_VERSION takes it: 0.6.121, or a beta such as 0.6.122-beta.3. */
 export const RELAY_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
@@ -168,5 +202,17 @@ export function saidDone(tool, { exitCode, stdout, relayMerge }) {
 		}
 	}
 	if (tool === "relay") return relayMerge?.planned > 0 && relayMerge.verified === relayMerge.planned;
+	if (tool === "codex") {
+		// `codex exec --json` prints one event a line; a turn ends with turn.completed or turn.failed. It said it was done
+		// when its last turn completed and it exited 0.
+		let last;
+		for (const line of stdout.split("\n")) {
+			try {
+				const event = JSON.parse(line);
+				if (event.type === "turn.completed" || event.type === "turn.failed") last = event.type;
+			} catch {}
+		}
+		return exitCode === 0 && last === "turn.completed";
+	}
 	return exitCode === 0;
 }

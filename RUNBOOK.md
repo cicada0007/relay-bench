@@ -236,3 +236,78 @@ What it needs, in the environment (never on the command line):
    ```
 
    Fix a flagged judge for every tool alike, then grade its runs again with `runner/rejudge.mjs`.
+
+## The bar: five tools on the exam
+
+**Not yet run.** Nothing below has been run: no sandbox, no model call. The Codex arm, the OpenAI meter and the bar's
+export are built and tested on fakes and hand-written fixtures only.
+
+Relay, Claude Code, Prime Agent and Hermes run on Claude Haiku 5.5 over the whole exam. Codex runs on an OpenAI model,
+so it is compared with Relay on that same model: GPT-6 Luna, which has the same list prices as Haiku 5.5 ($0.10 input,
+$0.50 output per million). Then a spot check runs 100 exam tasks on Claude Sonnet 5.5. Every tool is in its documented
+unattended mode (`runner/arms.mjs`), with the same tasks, time limit, spend cap per run, sandbox image and meter. Relay is
+the released version under test, installed by its own installer (`relay@0.6.121`; use the champion of the day).
+
+The numbers follow PREREGISTRATION.md's statistics. The task is the unit. Each comparison is Relay minus the other tool
+over the tasks both ran, with a 95% bootstrap interval over tasks (10,000 resamples, seed 20261015). The published
+export carries numbers only: no words for the result, no colours, and no exam task names.
+
+Before the first run:
+
+1. **The exam is ready:** its tasks are approved and locked (see "Growing the exam"). A counted stage refuses anything
+   else.
+2. **Keys in the environment:** `RELAY_BENCH_ANTHROPIC_KEY`, `RELAY_BENCH_OPENAI_KEY` and `E2B_API_KEY`. Each run gets
+   only its model's key: Codex and Relay on GPT-6 Luna get the OpenAI key as `OPENAI_API_KEY` and `CODEX_API_KEY`.
+3. **The image is rebuilt with Codex 0.163.0** (`node sandbox/template.mjs`; Codex was pinned after round 1). This
+   rebuild also refreshes the other tools' layers at their pinned versions.
+4. **Smoke runs** (dev, about $0.10 in all). Check that each tool finishes. For Codex, also check that `meter.jsonl` has
+   `"transport":"websocket"` lines with a `costUsd`: Codex talks to the Responses API over a WebSocket by default.
+
+   ```
+   node runner/run-one.mjs --task smoke-add --tasks-dir dev-tasks --tool codex --model gpt-6-luna --cap-usd 0.2 --test dev --out runs/dev
+   node runner/run-one.mjs --task smoke-add --tasks-dir dev-tasks --tool relay@0.6.121 --model gpt-6-luna --cap-usd 0.2 --test dev --out runs/dev
+   ```
+
+5. **A pilot on 3 exam tasks** for every tool, to measure the real cost per run. Its runs go beside the exam, like
+   every exam run:
+
+   ```
+   node runner/run-stage.mjs --test dev-bar-haiku --model claude-haiku-5-5 --tools relay@0.6.121,claude-code,prime-agent,hermes \
+     --tasks tier:exam --tasks-dir ../relay-exam/tasks --sample 3 --reps 1 --cap-usd 1 --stage-cap-usd 12 --e2b-cap-usd 5 --out ../relay-exam/runs/dev-bar
+   node runner/run-stage.mjs --test dev-bar-openai --model gpt-6-luna --tools relay@0.6.121,codex \
+     --tasks tier:exam --tasks-dir ../relay-exam/tasks --sample 3 --reps 1 --cap-usd 1 --stage-cap-usd 6 --e2b-cap-usd 5 --out ../relay-exam/runs/dev-bar
+   ```
+
+The three stages. Each one resumes when run again, and each one stops at its own cap. `--e2b-cap-usd` counts every
+run in `../relay-exam/runs/bar`.
+
+| Stage | Command | Runs | Cap |
+| --- | --- | --- | --- |
+| Haiku 5.5, four tools | `node runner/run-stage.mjs --test bar-1-haiku --model claude-haiku-5-5 --tools relay@0.6.121,claude-code,prime-agent,hermes --tasks tier:exam --tasks-dir ../relay-exam/tasks --reps 1 --cap-usd 1 --stage-cap-usd 250 --e2b-cap-usd 120 --concurrency 6 --out ../relay-exam/runs/bar` | 4 per task, about 1,600 | $250 |
+| GPT-6 Luna, Codex and Relay | `node runner/run-stage.mjs --test bar-1-openai --model gpt-6-luna --tools relay@0.6.121,codex --tasks tier:exam --tasks-dir ../relay-exam/tasks --reps 1 --cap-usd 1 --stage-cap-usd 125 --e2b-cap-usd 120 --concurrency 6 --out ../relay-exam/runs/bar` | 2 per task, about 800 | $125 |
+| Sonnet 5.5 spot check, 100 tasks | `node runner/run-stage.mjs --test bar-1-sonnet --model claude-sonnet-5-5 --tools relay@0.6.121,claude-code,prime-agent --tasks tier:exam --sample 100 --tasks-dir ../relay-exam/tasks --reps 1 --cap-usd 2 --stage-cap-usd 300 --e2b-cap-usd 120 --concurrency 4 --out ../relay-exam/runs/bar` | 300 | $300 |
+
+Every cap is an estimate for the founders to confirm, and so is the total: $675 for models and $120 for sandboxes. The
+estimate assumes round 1's cost per everyday change on Haiku 5.5 ($0.03 to $0.04 a run) rising to about $0.15 on real
+repositories. Sonnet 5.5 costs 20 times Haiku 5.5's price per token. The pilot above replaces the estimate. To compare
+Codex on GPT-6.1 Sol instead (test C's model in PREREGISTRATION.md), change `--model gpt-6.1-sol` and raise that
+stage's caps about 20 times.
+
+Read each stage, then write the comparison for the website:
+
+```
+node runner/analyze.mjs --out ../relay-exam/runs/bar --test bar-1-haiku --relay relay@0.6.121
+node runner/analyze.mjs --out ../relay-exam/runs/bar --test bar-1-openai --relay relay@0.6.121
+node runner/analyze.mjs --out ../relay-exam/runs/bar --test bar-1-sonnet --relay relay@0.6.121
+node scripts/export-results.mjs --bar --out ../relay-exam/runs/bar --to results/bar-1.json --relay relay@0.6.121
+```
+
+`results/bar-1.json` (`scripts/export-bar.mjs`) has, for each stage and tool:
+
+- the tasks and runs, requirements met, all runs pass, said done but failed, cost, cost per solved task and median
+  minutes;
+- for each other tool, Relay minus that tool, with its interval.
+
+It has no result words, no task names and no per-task scores. A stage not run yet is marked `"not run yet"`. A stage
+cut short is marked `"in progress"`, with a count of the runs it did not make. Then run the monthly hand check on these
+runs ("Growing the exam", step 6).

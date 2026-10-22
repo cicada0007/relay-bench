@@ -4,8 +4,11 @@
 // Appends one record to <out>/records.jsonl and keeps the run's logs, metered usage, patch and graded tree under
 // <out>/<run-id>/.
 //
-//   RELAY_BENCH_ANTHROPIC_KEY=... E2B_API_KEY=... node runner/run-one.mjs \
+//   node runner/run-one.mjs \
 //     --task py-mini-sql --tool claude-code --model claude-haiku-5-5 --rep 1 --cap-usd 1 --test pilot --out runs/round-1
+//
+// Keys come from the environment, for the model's provider only: RELAY_BENCH_ANTHROPIC_KEY for a Claude model,
+// RELAY_BENCH_OPENAI_KEY for an OpenAI one (Codex, and Relay on the same OpenAI model), and E2B_API_KEY.
 //
 // Test D (PREREGISTRATION.md) adds --fault kill|network|errors. Every tool then runs inside the same restart loop
 // (sandbox/restart-loop.sh), which runs the tool's own documented resume command when it stops without succeeding, up
@@ -18,7 +21,7 @@ import { gzipSync } from "node:zlib";
 import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
-import { ARMS, armFor, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
+import { ARMS, armFor, armRuns, providerOf, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
 import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -48,8 +51,13 @@ const { arm } = resolved;
 if (resolved.relayPackage && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package");
 if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
 if (args["relay-package"] && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only");
-const key = process.env.RELAY_BENCH_ANTHROPIC_KEY;
-if (!key) throw new Error("RELAY_BENCH_ANTHROPIC_KEY is not set");
+const provider = providerOf(args.model);
+if (!armRuns(arm, args.model)) throw new Error(`${args.tool} does not run ${provider} models such as ${args.model}`);
+const KEY_ENV = { anthropic: "RELAY_BENCH_ANTHROPIC_KEY", openai: "RELAY_BENCH_OPENAI_KEY" };
+const key = process.env[KEY_ENV[provider]];
+if (!key) throw new Error(`${KEY_ENV[provider]} is not set`);
+/** The one key a run gets, under the names its tools read: Codex reads CODEX_API_KEY for `codex exec`. */
+const keyEnv = provider === "openai" ? { OPENAI_API_KEY: key, CODEX_API_KEY: key } : { ANTHROPIC_API_KEY: key };
 
 const taskDir = join(args["tasks-dir"], args.task);
 const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -79,6 +87,7 @@ const record = {
 	taskKind: task.kind,
 	tool: args.tool,
 	model: args.model,
+	provider,
 	rep: Number(args.rep),
 	capUsd: Number(args["cap-usd"]),
 	limitMinutes: task.timeLimitMinutes,
@@ -94,13 +103,16 @@ record.requestSha256 = sha(request);
 // Content fingerprints, comparable with TASKS.lock.json: proof the run used the locked task.
 record.taskHashes = taskHashes(taskDir);
 
+/** A path that asks a model for tokens, as the meter counts them (meter/meter.mjs, isModelPath). */
+const MODEL_PATH = /\/(messages|responses(\/compact)?|chat\/completions)$/;
+
 /** The first model request in the meter's log, in epoch ms, once there is one. */
 async function firstModelRequestAt(sandbox, meterLog) {
 	const text = await sandbox.files.read(meterLog).catch(() => "");
 	for (const line of text.split("\n")) {
 		if (!line) continue;
 		const entry = JSON.parse(line);
-		if (entry.path?.split("?")[0].endsWith("/messages")) return Date.parse(entry.ts) - (entry.ms ?? 0);
+		if (MODEL_PATH.test(entry.path?.split("?")[0] ?? "")) return Date.parse(entry.ts) - (entry.ms ?? 0);
 	}
 	return undefined;
 }
@@ -177,8 +189,8 @@ try {
 		record.relayVersion = printed;
 	}
 
-	// The meter runs as root at api.anthropic.com inside this sandbox, so no tool's endpoint setting changes, and its
-	// log sits in a root-owned folder the tool can read but not rewrite.
+	// The meter runs as root at api.anthropic.com and api.openai.com inside this sandbox, so no tool's endpoint setting
+	// changes, and its log sits in a root-owned folder the tool can read but not rewrite.
 	const intercept = await sh(work, "sh /opt/relay-bench/meter-intercept.sh", { user: "root" });
 	if (intercept.exitCode !== 0) throw new Error(`the meter's certificate setup failed: ${intercept.stderr.slice(-400)}`);
 	const meterLog = `${METER_DIR}/meter.jsonl`;
@@ -188,14 +200,16 @@ try {
 			: "";
 	await work.commands.run(
 		`export PATH=${RUN_PATH}; node /opt/relay-bench/meter.mjs --port 443 --tls-cert /root/meter-tls/meter.crt ` +
-			`--tls-key /root/meter-tls/meter.key --upstream https://api.anthropic.com --resolve-upstream-by-dns ` +
+			`--tls-key /root/meter-tls/meter.key --upstream https://api.anthropic.com --openai-upstream https://api.openai.com ` +
+			`--resolve-upstream-by-dns ` +
 			`--plain-port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]}${meterFault} > ${METER_DIR}/meter.out 2>&1`,
 		{ background: true, envs: BASE_ENV, user: "root" },
 	);
 	// Checked the way the tools will see it: as the sandbox user, by name, through the hosts file and the run's certificate.
+	const host = provider === "openai" ? "api.openai.com" : "api.anthropic.com";
 	const up = await sh(
 		work,
-		`for i in $(seq 1 50); do curl -s -o /dev/null https://api.anthropic.com/ && exit 0; sleep 0.1; done; cat ${METER_DIR}/meter.out; exit 1`,
+		`for i in $(seq 1 50); do curl -s -o /dev/null https://${host}/ && exit 0; sleep 0.1; done; cat ${METER_DIR}/meter.out; exit 1`,
 	);
 	if (up.exitCode !== 0) throw new Error(`the meter did not start: ${up.stdout.slice(-400)}`);
 	record.meterMode = "intercept";
@@ -217,7 +231,7 @@ try {
 		{
 			cwd: WORK,
 			timeoutMs: task.timeLimitMinutes * 60_000,
-			envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ANTHROPIC_API_KEY: key },
+			envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ...keyEnv },
 		},
 		meterLog,
 	);
@@ -262,6 +276,7 @@ try {
 		output: priced.reduce((s, l) => s + l.output, 0),
 		cacheRead: priced.reduce((s, l) => s + l.cacheRead, 0),
 		cacheWrite: priced.reduce((s, l) => s + l.cacheWrite, 0),
+		...(provider === "openai" ? { reasoning: priced.reduce((s, l) => s + (l.reasoning ?? 0), 0), webSocketResponses: priced.filter((l) => l.transport === "websocket").length } : {}),
 		costUsd: priced.reduce((s, l) => s + l.costUsd, 0),
 		modelsSeen: [...new Set(lines.map((l) => l.model).filter(Boolean))],
 		effortsAsked: [...new Set(lines.map((l) => l.effort ?? l.thinking).filter(Boolean))],

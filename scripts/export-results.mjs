@@ -10,6 +10,10 @@
 // when its stage log ended (the runner printed "finished" or "stopped:"), or when every planned run has a record.
 //
 //   node scripts/export-results.mjs [--out runs/round-1] [--to results/round-1.json]
+//
+// The bar (RUNBOOK.md, "The bar: five tools on the exam"), numbers only, for the website (scripts/export-bar.mjs):
+//
+//   node scripts/export-results.mjs --bar [--out ../relay-exam/runs/bar] [--to results/bar-1.json] [--relay relay@0.6.121]
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,13 +23,35 @@ import { analyzeLongctx } from "../runner/longctx-analyze.mjs";
 import { analyzeTb21 } from "../runner/tb21-analyze.mjs";
 import { DATASET, DATASET_REF, HARBOR_VERSION } from "../runner/tb21.mjs";
 import { PINS, TEMPLATE_NAME } from "../sandbox/template.mjs";
+import { BAR_RELAY, BAR_STAGES, barResults } from "./export-bar.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
-	options: { out: { type: "string", default: "runs/round-1" }, to: { type: "string", default: "results/round-1.json" } },
+	options: { out: { type: "string" }, to: { type: "string" }, bar: { type: "boolean", default: false }, relay: { type: "string", default: BAR_RELAY } },
 });
+args.out ??= args.bar ? "../relay-exam/runs/bar" : "runs/round-1";
+args.to ??= args.bar ? "results/bar-1.json" : "results/round-1.json";
 const OUT = join(ROOT, args.out);
+/** Round 1's pins: Codex was pinned after the round (for the bar) and never ran in it. */
+const { codex: _pinnedAfterRound1, ...ROUND_1_PINS } = PINS;
 const REPO = "https://github.com/cicada0007/relay-bench";
+
+if (args.bar) {
+	const records = existsSync(join(OUT, "records.jsonl")) ? BAR_STAGES.map((s) => [s.id, loadRecords(args.out, s.id)]) : [];
+	const commit = (() => {
+		try {
+			return execFileSync("git", ["-C", ROOT, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+		} catch {
+			return null;
+		}
+	})();
+	const output = barResults(Object.fromEntries(records), { relay: args.relay, commit, repository: REPO });
+	const to = join(ROOT, args.to);
+	mkdirSync(dirname(to), { recursive: true });
+	writeFileSync(to, `${JSON.stringify(output, null, 2)}\n`);
+	console.log(`wrote ${args.to}: ${output.stages.map((s) => `${s.id} ${s.runs} runs ${s.status}`).join(", ")}`);
+	process.exit(0);
+}
 
 const TOOL_NAMES = { relay: "Relay", "claude-code": "Claude Code", "prime-agent": "Prime Agent", hermes: "Hermes" };
 const TOOL_ORDER = ["relay", "claude-code", "prime-agent", "hermes"];
@@ -398,7 +424,7 @@ const output = {
 	},
 	pins: {
 		sandboxTemplate: TEMPLATE_NAME,
-		...PINS,
+		...ROUND_1_PINS,
 		terminalBench: { harbor: HARBOR_VERSION, dataset: `${DATASET}@${DATASET_REF}` },
 		longContext: Object.fromEntries(
 			Object.entries(JSON.parse(readFileSync(join(ROOT, "runner", "longctx-manifest.json"), "utf8")).sets).map(([k, v]) => [
