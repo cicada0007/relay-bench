@@ -30,7 +30,8 @@ const { values: args } = parseArgs({
 		run: { type: "boolean", default: false },
 		tier: { type: "string", default: "practice" },
 		model: { type: "string" },
-		tasks: { type: "string", default: "kind:everyday,kind:long" },
+		// Practice: every everyday and long task. The exam or check tier: every task of that tier in --tasks-dir.
+		tasks: { type: "string" },
 		reps: { type: "string", default: "1" },
 		"cap-usd": { type: "string" },
 		"stage-cap-usd": { type: "string" },
@@ -70,7 +71,7 @@ if (args.run) {
 			"--test", args.test,
 			"--model", args.model,
 			"--tools", `${champion},${candidate}`,
-			"--tasks", args.tasks,
+			"--tasks", args.tasks ?? (args.tier === "practice" ? "kind:everyday,kind:long" : `tier:${args.tier}`),
 			"--tasks-dir", tasksDir(),
 			"--reps", args.reps,
 			"--cap-usd", args["cap-usd"],

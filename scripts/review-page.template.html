@@ -101,6 +101,11 @@ main { min-width: 0; display: grid; gap: 18px; }
 textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-size: 14px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .saved { font-size: 12px; color: var(--muted); min-height: 1em; }
 .empty { color: var(--muted); font-style: italic; }
+.exam { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.exam .row { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; }
+.exam .k { color: var(--muted); }
+.chip.ok { color: var(--fair); border-color: var(--fair); }
+.exam pre { margin: 0; background: var(--sunk); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; }
 @media (max-width: 1100px) { .pair { grid-template-columns: minmax(0, 1fr); } .col + .col { border-left: 0; border-top: 1px solid var(--line); } }
 @media (max-width: 860px) {
 	.layout { grid-template-columns: minmax(0, 1fr); }
@@ -111,9 +116,9 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 
 <div class="app">
 	<header class="top">
-		<div class="eyebrow">relay-bench · round 1 · tests A and B</div>
+		<div class="eyebrow" id="eyebrow">relay-bench · round 1 · tests A and B</div>
 		<h1>Task review</h1>
-		<p class="lede">Read each request beside the checks its hidden judge runs, then mark every part. "Clear and fair" means a careful developer reading only the request would build what the checks expect. Counted runs start once every part of every task is marked clear and fair; anything else comes back to Claude to fix, for every tool alike.</p>
+		<p class="lede" id="lede">Read each request beside the checks its hidden judge runs, then mark every part. "Clear and fair" means a careful developer reading only the request would build what the checks expect. Counted runs start once every part of every task is marked clear and fair; anything else comes back to Claude to fix, for every tool alike.</p>
 		<div class="summary" id="summary"></div>
 		<div class="status" id="status">Connecting to saved verdicts…</div>
 	</header>
@@ -128,6 +133,10 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 <script>
 (() => {
 	const DATA = JSON.parse(document.getElementById("review-data").textContent);
+	if (DATA.heading) {
+		document.getElementById("eyebrow").textContent = DATA.heading.eyebrow;
+		document.getElementById("lede").textContent = DATA.heading.lede;
+	}
 	const partsOf = (t) => [...t.requirements, "R0"];
 	const LABELS = { fair: "Clear and fair", unclear: "Unclear", unfair: "Unfair" };
 	const verdicts = new Map(); // "task__part" -> {verdict, note, at}
@@ -206,6 +215,20 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 		</section>`;
 	}
 
+	/** Who drafted an exam task, where it came from, and whether a founder has approved it. */
+	function examBlock(x) {
+		const link = (url) => (url && /^https:\/\/github\.com\//.test(url) ? `<a href="${esc(url)}" rel="noreferrer">${esc(url.replace("https://github.com/", ""))}</a>` : "–");
+		const approved = x.problems.length === 0;
+		return `<div class="exam">
+			<div class="chips">
+				<span class="chip">drafted by ${esc(x.draftedBy || "nobody on record")}</span>
+				<span class="chip ${approved ? "ok" : "warn"}">${approved ? `approved by ${esc(x.approvedBy)}, ${esc((x.approvedAt || "").slice(0, 10))}` : esc(x.problems.join("; "))}</span>
+			</div>
+			<div class="row"><span class="k">Issue</span>${link(x.source?.issue)}<span class="k">Pull request</span>${link(x.source?.pr)}<span class="k">License</span>${esc(x.source?.license || "–")}</div>
+			${approved ? "" : `<div class="row"><span class="k">Approve it, if you did not draft it:</span></div><pre><code>${esc(x.approveCommand)}</code></pre>`}
+		</div>`;
+	}
+
 	function renderTask() {
 		const t = DATA.tasks.find((x) => x.id === current);
 		const main = document.getElementById("task");
@@ -217,7 +240,7 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 		const checkTotal = Object.entries(s.checks).filter(([p]) => p !== "R0").reduce((a, [, c]) => a + c, 0);
 		main.innerHTML = `
 			<div class="task-head">
-				<div class="eyebrow mono">${esc(t.id)} · ${t.kind === "everyday" ? "everyday change" : "long request"}${t.private ? " · private holdout" : ""}</div>
+				<div class="eyebrow mono">${esc(t.id)} · ${t.kind === "everyday" ? "everyday change" : "long request"}${t.exam ? ` · ${esc(t.exam.tier)} tier` : t.private ? " · private holdout" : ""}</div>
 				<h2>${esc(t.title)}</h2>
 				<div class="chips">
 					<span class="chip">${esc(t.stack.join(", "))}</span>
@@ -227,6 +250,7 @@ textarea { width: 100%; min-height: 64px; resize: vertical; font: inherit; font-
 					${t.checks ? `<span class="chip">${checkTotal} checks across ${t.requirements.length} part${t.requirements.length === 1 ? "" : "s"}</span>` : `<span class="chip warn">no CHECKS.md yet</span>`}
 				</div>
 				<div class="intro md">${md(t.request.intro)}</div>
+				${t.exam ? examBlock(t.exam) : ""}
 			</div>
 			${partsOf(t).map((p) => partBlock(t, p)).join("")}
 			<section class="part"><div class="part-head"><span class="tag">all</span><h3>Rules for every part</h3></div>

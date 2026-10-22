@@ -1,0 +1,2101 @@
+{
+ "recorded": "GitHub REST API, read-only, 22 October 2026; trimmed to the fields mine-tasks.mjs reads (bodies cut, diffs and file contents shortened)",
+ "searchItems": [
+  {
+   "url": "https://api.github.com/repos/iwyoo/smiles-to-iupac/issues/3670",
+   "html_url": "https://github.com/iwyoo/smiles-to-iupac/pull/3670",
+   "repository_url": "https://api.github.com/repos/iwyoo/smiles-to-iupac",
+   "number": 3670,
+   "title": "Name an acylated hydrazine whose acylated nitrogen carries a second nitrogen group: N-(dimethylamino)acetohydrazide (P-66.3.1.1, P-66.1.1.1)",
+   "body": "Closes #3651\n\n- A hydrazide was recognised only when the acylated nitrogen had exactly one nitrogen neighbour, so a further amino, dialkylamino or ring-nitrogen group on it left the structure without a parent. The terminal nitrogen is now chosen among the nitrogen neighbours (the one with more hydrogens, so that the other group is a complete prefix), and the remaining amino-type nitrogen is cited as an N prefix: `CC(=O)N(N)N(C)C` gives `N-(dimethylamino)acetohydrazide`, `CC(=O)N(N)N1CCOCC1` gives `N-(morpholin-4-yl)acetohydrazide`, `CC(=O)N(N)N` gives `N-aminoacetohydrazide`.\n- Hydrazides with",
+   "user": {
+    "login": "iwyoo",
+    "type": "User"
+   },
+   "pull_request": {
+    "merged_at": "2026-10-20T23:48:37Z"
+   }
+  },
+  {
+   "url": "https://api.github.com/repos/JamshidS/aiset/issues/39",
+   "html_url": "https://github.com/JamshidS/aiset/pull/39",
+   "repository_url": "https://api.github.com/repos/JamshidS/aiset",
+   "number": 39,
+   "title": "fix: match sessions to their workspace the way Claude Code names folders",
+   "body": "## What this fixes\n\nCloses #24\n\nTwo ways the office lost or gained sessions.\n\n**1. Non-ASCII workspace paths never matched.** `workspace.slug()` lowercased before substituting:\n\n```python\nre.sub(r\"[^a-z0-9]\", \"-\", str(path).lower())\n```\n\nIn Python `\"İ\".lower()` is two characters (`i` + U+0307), so one character spent two dashes: `C:\\Users\\İsmail\\shop` became `c--users-i-smail-shop`, while Claude Code made `c--users--smail-shop`. The prefix never matched and the office showed no sessions at all.\n\nFixed by substituting before lowercasing. Characters outside the BMP are replaced per UTF-16 code u",
+   "user": {
+    "login": "ddaihao2022",
+    "type": "User"
+   },
+   "pull_request": {
+    "merged_at": "2026-10-20T23:59:02Z"
+   }
+  }
+ ],
+ "responses": {
+  "/repos/iwyoo/smiles-to-iupac": {
+   "full_name": "iwyoo/smiles-to-iupac",
+   "html_url": "https://github.com/iwyoo/smiles-to-iupac",
+   "clone_url": "https://github.com/iwyoo/smiles-to-iupac.git",
+   "private": false,
+   "fork": false,
+   "archived": false,
+   "language": "Python",
+   "stargazers_count": 0,
+   "size": 8681,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  "/repos/iwyoo/smiles-to-iupac/pulls/3670": {
+   "number": 3670,
+   "html_url": "https://github.com/iwyoo/smiles-to-iupac/pull/3670",
+   "title": "Name an acylated hydrazine whose acylated nitrogen carries a second nitrogen group: N-(dimethylamino)acetohydrazide (P-66.3.1.1, P-66.1.1.1)",
+   "body": "Closes #3651\n\n- A hydrazide was recognised only when the acylated nitrogen had exactly one nitrogen neighbour, so a further amino, dialkylamino or ring-nitrogen group on it left the structure without a parent. The terminal nitrogen is now chosen among the nitrogen neighbours (the one with more hydrogens, so that the other group is a complete prefix), and the remaining amino-type nitrogen is cited as an N prefix: `CC(=O)N(N)N(C)C` gives `N-(dimethylamino)acetohydrazide`, `CC(=O)N(N)N1CCOCC1` gives `N-(morpholin-4-yl)acetohydrazide`, `CC(=O)N(N)N` gives `N-aminoacetohydrazide`.\n- Hydrazides with",
+   "merged_at": "2026-10-20T23:48:37Z",
+   "merge_commit_sha": "81c3a6cda2f5abea23c5bb233a518511e5fb7506",
+   "user": {
+    "login": "iwyoo",
+    "type": "User"
+   },
+   "base": {
+    "ref": "main",
+    "sha": "8f3a9e1032a043b5caf6c12e30308e37b34277bd"
+   },
+   "head": {
+    "ref": "hydrazide-acylated-nitrogen-amino-group",
+    "sha": "1496dd29717cc5c88f238d955dce1d93cbb07320"
+   }
+  },
+  "/repos/iwyoo/smiles-to-iupac/issues/3651": {
+   "number": 3651,
+   "html_url": "https://github.com/iwyoo/smiles-to-iupac/issues/3651",
+   "title": "Name an acylated hydrazine whose acylated nitrogen carries a second nitrogen group: N-(dimethylamino)acetohydrazide (P-66.3.1.1, P-66.1.1.1)",
+   "body": "## Rule\n- P-66.3.1.1: a hydrazide is the acid name with the suffix \"hydrazide\"; substituents on the hydrazine nitrogens are cited with `N` and `N'` locants, `N` being the acylated nitrogen.\n- P-66.1.1.1: substituents on the nitrogen of an amide are cited with `N` locants, and a substituent that is i",
+   "created_at": "2026-10-20T16:51:57Z",
+   "user": {
+    "login": "iwyoo",
+    "type": "User"
+   }
+  },
+  "/repos/iwyoo/smiles-to-iupac/pulls/3670/files?per_page=100": [
+   {
+    "filename": "src/smiles_to_iupac/_polyfunctional.py",
+    "status": "modified",
+    "additions": 36,
+    "deletions": 8,
+    "patch": "@@ (trimmed) @@"
+   },
+   {
+    "filename": "tests/test_nitrogen_groups.py",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 0,
+    "patch": "@@ (trimmed) @@"
+   }
+  ],
+  "/repos/iwyoo/smiles-to-iupac/git/trees/8f3a9e1032a043b5caf6c12e30308e37b34277bd?recursive=1": {
+   "tree": [
+    {
+     "path": ".github",
+     "type": "tree"
+    },
+    {
+     "path": ".github/workflows",
+     "type": "tree"
+    },
+    {
+     "path": ".github/workflows/release.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".gitignore",
+     "type": "blob"
+    },
+    {
+     "path": "CHANGELOG.md",
+     "type": "blob"
+    },
+    {
+     "path": "LICENSE",
+     "type": "blob"
+    },
+    {
+     "path": "README.md",
+     "type": "blob"
+    },
+    {
+     "path": "REFERENCES.md",
+     "type": "blob"
+    },
+    {
+     "path": "pyproject.toml",
+     "type": "blob"
+    },
+    {
+     "path": "src",
+     "type": "tree"
+    },
+    {
+     "path": "src/smiles_to_iupac",
+     "type": "tree"
+    },
+    {
+     "path": "src/smiles_to_iupac/__init__.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/__main__.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acetal.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acetyl_names.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acid_derivatives.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acid_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acid_lexicon.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acid_prefixes.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acid_salts.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_acyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_adduct.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_aldehyde_carboxylic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_alkoxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_alkoxy.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_alternating_cage.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_alternatives.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amine_imide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amine_oxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amine_ring_parent.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_aminide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amino_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amino_acid_derivative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amino_acid_retained.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_amino_acyl_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ammonium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anilino.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anion.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anion_center.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anion_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anion_ligands.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anion_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_anisole.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_appendix3_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_appendix3_naming.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_appendix3_skeletons.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_appendix3_stereo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_aromatic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_axial_stereo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_azide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_azine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_azonic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_benzenide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_bicyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_borane.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_borane_silane_amide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_borinic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_boronic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbamate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbamate_ester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbanide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbene_amine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbenium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbohydrate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbon_monoxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbonic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbonic_amide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbonic_ester_anion.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbonic_family.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carbonic_hydrazide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_carboxylic_acid_amide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cation_assembly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_amide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_assembly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_cation.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_multiplicative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_onium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chain_ylium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_aldehyde.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_chain_heterone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_chain_parent.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_hydrazide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_imide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_oxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogen_polychain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogenide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogenoic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcogenourea.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_chalcone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cited_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_coexisting_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_common.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_common_hydride.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_complex_stereo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_condensed_guanidine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_conjunctive.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_coordination.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cyclic_unsaturated.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cyclopentadienide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_cyclophane.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diacyl_linker.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diacylamine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diacylhydrazine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diazene.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diazo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diazonium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_dichalcogenide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_didehydro_ring.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diester_acyloxy.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diester_anions.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diester_ring_diyl.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_dinuclear_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_dipolar.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_dipole_oxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_diselenide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_disjoint_ring_substituents.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_disulfide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ditelluride.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ester_by_parts.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ether.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_formazan.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_free_valence.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_attached.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_bridged.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_fused.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_modified.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_numbering.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_spiral.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_spiro.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fullerene_symmetry.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_functional_modifier.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_functional_prefixes.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_functional_replacement_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fused_numbering.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fused_ring_yne.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fusion_bridged.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fusion_components.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_fusion_name.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_glycoside.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_glycosyl.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_group1_2_organometallic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_group_polycation.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_guanidine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_halogen_acid_ester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_halogen_amide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_halogen_oxo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hapto.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hapto_ext.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_acylium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_carboxylic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_monocyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_prefixes.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_ring_amine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hetero_ring_oxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_heteroacyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_heteroaryne.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hidden_amide_ketone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_histidine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydrazine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydrazine_multiplicative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydride_carbo_suffix.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydride_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydride_polyester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydride_ring_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydride_ylium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydrogen_cation.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydroperoxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydroxylamine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydroxylamine_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_hydroxylamine_general.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_imidoyl_prefix.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inorganic_acid_derivative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inorganic_ester_parent.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inorganic_molecule.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inorganic_polyester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inositol.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_inositol_derivative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ion_adduct.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ionic_prefix.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_iso_cyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isocyanide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isoselenocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotellurocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isothiocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotope.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotope_acid_hydrogen.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotope_labels.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotope_one_carbon.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_isotope_steroid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_lambda_ring.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_linear_phane.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_locant_omission.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metal_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metal_pair.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metallacycle.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metallacycle_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metallafused.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metallapolycycle.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_metallocene.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_methanediimine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_mixed_onium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_mononuclear_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_cation.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_linker.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_prefix.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_ring.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_multiplicative_text.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitrate_ester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitrite_ester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitro.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitro_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitrogen_methylene_multiplicative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitrogen_parent_labels.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nitroso.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_noncarbon_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nonstandard_hydride.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_acyl.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_build.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_config.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_core.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_diff.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_fusion.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_match.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_name.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_region.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_rings.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_skel.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_np_text.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nucleoside.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_nucleoside_substituted.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_numerals.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ocene.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ocene_linked.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_oligonucleotide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_onium_prefixes.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_oxoacid_acyl.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_oxonium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_parent_choice.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_parent_hydride_stripping.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_parent_locants.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_peptide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_peroxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phane_amplificant.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phane_general.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phane_skeleton.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphane_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphanone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphanyl_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphite.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphonic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphonium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphorus_acid_derivative.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphorus_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_phosphorus_thioester.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_pin.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyborane.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polycarbonic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polycarbonic_nuclides.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polycation.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polycyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polycyclic_suffix.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyfunctional.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polynuclear_oxoacid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyphosphane.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyspiro.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyspiro_heteroatom.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_polyspiro_union.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_prefix_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_proline.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_hetero.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_hydryl.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_ion.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_ion_skeleton.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_radical_poly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_retained_acids.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_amine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_assembly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_assembly_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_assembly_ylidene.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_diyl_numbering.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_extras.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_heteroatom_nitrile.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_imine.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_lambda_heterone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_nitrogen_hydrazide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ring_system_seniority.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_salt.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenoic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenourea.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_selenoxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_seniority.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_silane_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_silicic_cyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_skeletal_group.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sphingoid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro_heteroatom.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro_hub_atom.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro_stereo.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro_tree.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_spiro_union.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_stereoparents.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_steroid_named.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_steroid_parent_hydrides.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_substituents.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sugar_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sugar_substituted.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfonate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfonium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_sulfoxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_system_assembly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_telluride.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_tellurocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_telluroic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_tellurone.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_tellurourea.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_telluroxide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_terminal_chain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_thiocyanate.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_thioic_acid.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_thiourea.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_tricyclic.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_unsaturated.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_urea.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_uronium.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_vb_ring_assembly.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_von_baeyer_heteroatom.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ylide.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_ylium_ring.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/_zwitterion.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/core.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/smiles_to_iupac/py.typed",
+     "type": "blob"
+    },
+    {
+     "path": "tests",
+     "type": "tree"
+    },
+    {
+     "path": "tests/conftest.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_appendix3_skeletons.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_bridged_spiro_rings.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_carbohydrates_biomolecules.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_core_naming.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_fused_ring_systems.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_ions_radicals_salts.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_isotopes.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_multiplicative_linkers.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_natural_products.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_nitrogen_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_np_operation_search.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_nucleoside_substituted.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_nucleotides.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_organometallic_boron_silicon.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_oxygen_groups.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_phosphorus.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_polyfunctional.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_ring_assemblies.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_selenium_tellurium.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_steroid_derivatives.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_steroids.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_sulfur.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_unsupported_kinds.py",
+     "type": "blob"
+    }
+   ]
+  },
+  "/repos/iwyoo/smiles-to-iupac/contents/pyproject.toml?ref=8f3a9e1032a043b5caf6c12e30308e37b34277bd": {
+   "encoding": "base64",
+   "content": "W2J1aWxkLXN5c3RlbV0KcmVxdWlyZXMgPSBbImhhdGNobGluZyJdCmJ1aWxkLWJhY2tlbmQgPSAiaGF0Y2hsaW5nLmJ1aWxkIgoKW3Byb2plY3RdCm5hbWUgPSAic21pbGVzLXRvLWl1cGFjIgpkeW5hbWljID0gWyJ2ZXJzaW9uIl0KZGVzY3JpcHRpb24gPSAiUnVsZS1iYXNlZCBTTUlMRVMgdG8gSVVQQUMgbmFtZSBjb252ZXJzaW9uIGZvbGxvd2luZyB0aGUgMjAxMyBJVVBBQyByZWNvbW1lbmRhdGlvbnMgKHRoZSBCbHVlIEJvb2spIgpyZWFkbWUgPSAiUkVBRE1FLm1kIgpsaWNlbnNlID0gIk1JVCIKbGljZW5zZS1maWxlcyA9IFsiTElDRU5TRSJdCnJlcXVpcmVzLXB5dGhvbiA9ICI+PTMuMTAiCmF1dGhvcnMgPSBbCiAgICB7IG5hbWUgPSAiSW53YW4gWW9vIiB9LApdCmtleXdvcmRzID0gWyJjaGVtaXN0cnkiLCAiY2hlbWluZm9ybWF0aWNzIiwgIml1cGFjIiwgIm5vbWVuY2xhdHVyZSIsICJzbWlsZXMiLCAicmRraXQiXQpjbGFzc2lmaWVycyA9IFsKICAgICJEZXZlbG9wbWVudCBTdGF0dXMgOjogMyAtIEFscGhhIiwKICAgICJJbnRlbmRlZCBBdWRpZW5jZSA6OiBTY2llbmNlL1Jlc2VhcmNoIiwKICAgICJPcGVyYXRpbmcgU3lzdGVtIDo6IE9TIEluZGVwZW5kZW50IiwKICAgICJQcm9ncmFtbWluZyBMYW5ndWFnZSA6OiBQeXRob24gOjogMyIsCiAgICAiUHJvZ3JhbW1pbmcgTGFuZ3VhZ2UgOjogUHl0aG9uIDo6IDMgOjogT25seSIsCiAgICAiUHJvZ3JhbW1pbmcgTGFuZ3VhZ2UgOjogUHl0aG9uIDo6IDMuMTAiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzLjExIiwKICAgICJQcm9ncmFtbWluZyBMYW5ndWFnZSA6OiBQeXRob24gOjogMy4xMiIsCiAgICAiUHJvZ3JhbW1pbmcgTGFuZ3VhZ2UgOjogUHl0aG9uIDo6IDMuMTMiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzLjE0IiwKICAgICJUb3BpYyA6OiBTY2llbnRpZmljL0VuZ2luZWVyaW5nIDo6IENoZW1pc3RyeSIsCiAgICAiVHlwaW5nIDo6IFR5cGVkIiwKXQpkZXBlbmRlbmNpZXMgPSBbCiAgICAicmRraXQ+PTIwMjMuOS4xIiwKICAgICJuZXR3b3JreD49My4wIiwKXQoKW3Byb2plY3Qub3B0aW9uYWwtZGVwZW5kZW5jaWVzXQpkZXYgPSBbCiAgICAicHl0ZXN0Pj03LjAiLAogICAgInB5dGVzdC14ZGlzdD49My4wIiwKICAgICJydWZmPj0wLjQiLApdCgpbcHJvamVjdC51cmxzXQpIb21lcGFnZSA9ICJodHRwczovL2dpdGh1Yi5jb20vaXd5b28vc21pbGVzLXRvLWl1cGFjIgpSZXBvc2l0b3J5ID0gImh0dHBzOi8vZ2l0aHViLmNvbS9pd3lvby9zbWlsZXMtdG8taXVwYWMiCklzc3VlcyA9ICJodHRwczovL2dpdGh1Yi5jb20vaXd5b28vc21pbGVzLXRvLWl1cGFjL2lzc3VlcyIKQ2hhbmdlbG9nID0gImh0dHBzOi8vZ2l0aHViLmNvbS9pd3lvby9zbWlsZXMtdG8taXVwYWMvYmxvYi9tYWluL0NIQU5HRUxPRy5tZCIKCltwcm9qZWN0LnNjcmlwdHNdCnNtaWxlcy10by1pdXBhYyA9ICJzbWlsZXNfdG9faXVwYWMuX19tYWluX186bWFpbiIKClt0b29sLmhhdGNoLnZlcnNpb25dCnBhdGggPSAic3JjL3NtaWxlc190b19pdXBhYy9fX2luaXRfXy5weSIKClt0b29sLmhhdGNoLmJ1aWxkLnRhcmdldHMud2hlZWxdCnBhY2thZ2VzID0gWyJzcmMvc21pbGVzX3RvX2l1cGFjIl0KClt0b29sLmhhdGNoLmJ1aWxkLnRhcmdldHMuc2Rpc3RdCmluY2x1ZGUgPSBbCiAgICAiL3NyYyIsCg=="
+  },
+  "/repos/iwyoo/smiles-to-iupac/contents/tests/test_nitrogen_groups.py?ref=81c3a6cda2f5abea23c5bb233a518511e5fb7506": {
+   "encoding": "base64",
+   "content": "aW1wb3J0IHB5dGVzdApmcm9tIHNtaWxlc190b19pdXBhYyBpbXBvcnQgc21pbGVzX3RvX2FsdGVybmF0aXZlX25hbWVzLCBzbWlsZXNfdG9faXVwYWMKZnJvbSBzbWlsZXNfdG9faXVwYWMuX2NvbW1vbiBpbXBvcnQgVW5zdXBwb3J0ZWRTdHJ1Y3R1cmUKCgpAcHl0ZXN0Lm1hcmsucGFyYW1ldHJpemUoCiAgICAic21pbGVzLCBleHBlY3RlZCIsCiAgICBbCiAgICAgICAgcHl0ZXN0LnBhcmFtKCJPPUMoQyhDKEYpKEYpRilDKEYpKEYpRilOKENDKUNDIiwgIk4sTi1kaWV0aHlsLTMsMywzLXRyaWZsdW9yby0yLSh0cmlmbHVvcm9tZXRoeWwpcHJvcGFuYW1pZGUiLCBpZD0ibl9uX2Rpc3Vic3RpdHV0ZWRfYW1pZGVfd2l0aF9sb2NhbnRfbGVhZGluZ19wYXJlbnRfbmFtZSIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiQ0MoPU8pTkNDQ2wiLCAiTi0oMi1jaGxvcm9ldGh5bClhY2V0YW1pZGUiLCBpZD0iaGFsb2dlbmF0ZWRfbl9zdWJzdGl0dWVudCIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiQ0MoPU8pTkM9QyIsICJOLWV0aGVueWxhY2V0YW1pZGUiLCBpZD0idW5zYXR1cmF0ZWRfbl9zdWJzdGl0dWVudCIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiTz1DMUNDQ04xIiwgInB5cnJvbGlkaW4tMi1vbmUiLCBpZD0ibGFjdGFtX2lzX25hbWVkX3ZpYV9rZXRvbmVfbW9kdWxlIiksCiAgICAgICAgcHl0ZXN0LnBhcmFtKCJOQyg9TylDQyhOKT1PIiwgInByb3BhbmVkaWFtaWRlIiwgaWQ9ImRpYW1pZGUiKSwKICAgICAgICBweXRlc3QucGFyYW0oIk9DYzFjY2NjYzFDQyhOKT1PIiwgIjItWzItKGh5ZHJveHltZXRoeWwpcGhlbnlsXWFjZXRhbWlkZSIsIGlkPSJwaGVueWxfY2hhaW5fYW1pZGVfd2l0aF9oeWRyb3h5bCIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiQz1DYzFjY2NjYzFDQyhOKT1PIiwgIjItKDItZXRoZW55bHBoZW55bClhY2V0YW1pZGUiLCBpZD0icGhlbnlsX2NoYWluX2FtaWRlX3Vuc2F0dXJhdGlvbiIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiTz1DTmMxY2NjY2MxIiwgIk4tcGhlbnlsZm9ybWFtaWRlIiwgaWQ9Im5fcGhlbnlsX2Zvcm1hbWlkZSIpLAogICAgICAgIHB5dGVzdC5wYXJhbSgiQ0MoPU8pTihDKWMxY2NjY2MxIiwgIk4tbWV0aHlsLU4tcGhlbnlsYWNldGFtaWRlIiwgaWQ9Im5fcGhlbnlsX2FtaWRlX3dpdGhfc2Vjb25kX25fc3Vic3RpdHVlbnQiKSwKICAgICAgICBweXRlc3QucGFyYW0oIkNDKD1PKU5jMWNjYyhPKWNjMSIsICJOLSg0LWh5ZHJveHlwaGVueWwpYWNldGFtaWRlIiwgaWQ9Im5fcGhlbnlsX2FtaWRlX3N1YnN0aXR1dGVkX3JpbmciKSwKICAgICAgICBweXRlc3QucGFyYW0oIkNDKD1PKU5DMT1OQ0NTMSIsICJOLSg0LDUtZGloeWRyby0xLDMtdGhpYXpvbC0yLXlsKWFjZXRhbWlkZSIsIGlkPSJyaW5nX2FtaWRpbmVfY2FyYm9uX2lzX2FfcmluZ19hdG9tX29mX3RoZV9uX3N1YnN0aXR1ZW50IiksCiAgICAgICAgcHl0ZXN0LnBhcmFtKAogICAgICAgICAgICAiQ04oQylDQ05DMT1OQ0NDMSIsCiAgICAgICAgICAgICJOMi0oMyw0LWRpaHlkcm8tMkgtcHlycm9sLTUteWwpLU4xLE4xLWRpbWV0aHlsZXRoYW5lLTEsMi1kaWFtaW5lIiwKICAgICAgICAgICAgaWQ9InJpbmdfYW1pZGluZV9zdWJzdGl0dWVudF9vZl9hX2RpYW1pbmUiLAogICAgICAgICksCiAgICBdLAopCmRlZiB0ZXN0X25fbl9kaXN1YnN0aXR1dGVkX2FuZF9yZWxhdGVkKHNtaWxlcywgZXhwZWN0ZWQpOgogICAgYXNzZXJ0IHNtaWxlc190b19pdXBhYyhzbWlsZXMpID09IGV4cGVjdGVkCgoK"
+  },
+  "/repos/JamshidS/aiset": {
+   "full_name": "JamshidS/aiset",
+   "html_url": "https://github.com/JamshidS/aiset",
+   "clone_url": "https://github.com/JamshidS/aiset.git",
+   "private": false,
+   "fork": false,
+   "archived": false,
+   "language": "Python",
+   "stargazers_count": 12,
+   "size": 14832,
+   "license": {
+    "spdx_id": "MIT"
+   }
+  },
+  "/repos/JamshidS/aiset/pulls/39": {
+   "number": 39,
+   "html_url": "https://github.com/JamshidS/aiset/pull/39",
+   "title": "fix: match sessions to their workspace the way Claude Code names folders",
+   "body": "## What this fixes\n\nCloses #24\n\nTwo ways the office lost or gained sessions.\n\n**1. Non-ASCII workspace paths never matched.** `workspace.slug()` lowercased before substituting:\n\n```python\nre.sub(r\"[^a-z0-9]\", \"-\", str(path).lower())\n```\n\nIn Python `\"İ\".lower()` is two characters (`i` + U+0307), so one character spent two dashes: `C:\\Users\\İsmail\\shop` became `c--users-i-smail-shop`, while Claude Code made `c--users--smail-shop`. The prefix never matched and the office showed no sessions at all.\n\nFixed by substituting before lowercasing. Characters outside the BMP are replaced per UTF-16 code u",
+   "merged_at": "2026-10-20T23:59:02Z",
+   "merge_commit_sha": "6dc09a33a1b721b1d35f2a4b7ccdc316769ac279",
+   "user": {
+    "login": "ddaihao2022",
+    "type": "User"
+   },
+   "base": {
+    "ref": "master",
+    "sha": "a1e65e3a920b22fde94dc127bc9847efc7aac0ff"
+   },
+   "head": {
+    "ref": "fix-24-workspace-slug-session-filter",
+    "sha": "0fc39317bffa5daa62987c764299447773687c15"
+   }
+  },
+  "/repos/JamshidS/aiset/issues/24": {
+   "number": 24,
+   "html_url": "https://github.com/JamshidS/aiset/issues/24",
+   "title": "Sessions matched to the wrong workspace: non-ASCII paths and prefix-only match",
+   "body": "## Problem\n\nThe office finds a workspace's sessions by turning its path into the folder name Claude Code uses under `~/.claude/projects`. Two things go wrong:\n\n1. **Non-ASCII paths never match.** `workspace.slug()` lowercases first and replaces characters after. In Python, `\"İ\".lower()` is two chara",
+   "created_at": "2026-10-20T20:02:44Z",
+   "user": {
+    "login": "JamshidS",
+    "type": "User"
+   }
+  },
+  "/repos/JamshidS/aiset/pulls/39/files?per_page=100": [
+   {
+    "filename": "CHANGELOG.md",
+    "status": "modified",
+    "additions": 1,
+    "deletions": 0,
+    "patch": "@@ (trimmed) @@"
+   },
+   {
+    "filename": "src/aiset/core.py",
+    "status": "modified",
+    "additions": 20,
+    "deletions": 1,
+    "patch": "@@ (trimmed) @@"
+   },
+   {
+    "filename": "src/aiset/workspace.py",
+    "status": "modified",
+    "additions": 20,
+    "deletions": 2,
+    "patch": "@@ (trimmed) @@"
+   },
+   {
+    "filename": "tests/test_workspace_slug.py",
+    "status": "added",
+    "additions": 98,
+    "deletions": 0,
+    "patch": "@@ (trimmed) @@"
+   }
+  ],
+  "/repos/JamshidS/aiset/git/trees/a1e65e3a920b22fde94dc127bc9847efc7aac0ff?recursive=1": {
+   "tree": [
+    {
+     "path": ".editorconfig",
+     "type": "blob"
+    },
+    {
+     "path": ".gitattributes",
+     "type": "blob"
+    },
+    {
+     "path": ".github",
+     "type": "tree"
+    },
+    {
+     "path": ".github/CODEOWNERS",
+     "type": "blob"
+    },
+    {
+     "path": ".github/ISSUE_TEMPLATE",
+     "type": "tree"
+    },
+    {
+     "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/ISSUE_TEMPLATE/config.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/dependabot.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/pull_request_template.md",
+     "type": "blob"
+    },
+    {
+     "path": ".github/workflows",
+     "type": "tree"
+    },
+    {
+     "path": ".github/workflows/ci.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/workflows/codeql.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".github/workflows/release.yml",
+     "type": "blob"
+    },
+    {
+     "path": ".gitignore",
+     "type": "blob"
+    },
+    {
+     "path": "CHANGELOG.md",
+     "type": "blob"
+    },
+    {
+     "path": "CODE_OF_CONDUCT.md",
+     "type": "blob"
+    },
+    {
+     "path": "CONTRIBUTING.md",
+     "type": "blob"
+    },
+    {
+     "path": "LICENSE",
+     "type": "blob"
+    },
+    {
+     "path": "Makefile",
+     "type": "blob"
+    },
+    {
+     "path": "README.md",
+     "type": "blob"
+    },
+    {
+     "path": "SECURITY.md",
+     "type": "blob"
+    },
+    {
+     "path": "docs",
+     "type": "tree"
+    },
+    {
+     "path": "docs/FEATURES.md",
+     "type": "blob"
+    },
+    {
+     "path": "docs/RESEARCH-TOOLS.md",
+     "type": "blob"
+    },
+    {
+     "path": "docs/USER-GUIDE.md",
+     "type": "blob"
+    },
+    {
+     "path": "docs/branding",
+     "type": "tree"
+    },
+    {
+     "path": "docs/branding/aiset-icon-master.png",
+     "type": "blob"
+    },
+    {
+     "path": "docs/branding/aiset-logo.png",
+     "type": "blob"
+    },
+    {
+     "path": "docs/branding/preview.html",
+     "type": "blob"
+    },
+    {
+     "path": "docs/branding/readme-hero.svg",
+     "type": "blob"
+    },
+    {
+     "path": "docs/branding/social-preview.png",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media",
+     "type": "tree"
+    },
+    {
+     "path": "docs/media/architecture.png",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/ask-pm.gif",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/brain-map.png",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/brain.gif",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/office-board.gif",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/office.gif",
+     "type": "blob"
+    },
+    {
+     "path": "docs/media/pm-report.png",
+     "type": "blob"
+    },
+    {
+     "path": "eval",
+     "type": "tree"
+    },
+    {
+     "path": "eval/research_eval.py",
+     "type": "blob"
+    },
+    {
+     "path": "pyproject.toml",
+     "type": "blob"
+    },
+    {
+     "path": "src",
+     "type": "tree"
+    },
+    {
+     "path": "src/aiset",
+     "type": "tree"
+    },
+    {
+     "path": "src/aiset/__init__.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/archmap.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/brain.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/brief_index.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/core.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/init_team.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/registry.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/research.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/roster.json",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/server.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/settings.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static",
+     "type": "tree"
+    },
+    {
+     "path": "src/aiset/static/aiset-icon.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/apple-touch-icon.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/architecture.html",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/brain.html",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/favicon-16.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/favicon-32.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/favicon-48.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/favicon.ico",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/icon-192.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/icon-512.png",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/index.html",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/settings.html",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/static/site.webmanifest",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/sync_names.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/teammap.py",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/teammap_ts.js",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/templates",
+     "type": "tree"
+    },
+    {
+     "path": "src/aiset/templates/engineer.md",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/templates/integration-checker.md",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/templates/pm.md",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/templates/tester.md",
+     "type": "blob"
+    },
+    {
+     "path": "src/aiset/workspace.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests",
+     "type": "tree"
+    },
+    {
+     "path": "tests/fixtures",
+     "type": "tree"
+    },
+    {
+     "path": "tests/fixtures/research",
+     "type": "tree"
+    },
+    {
+     "path": "tests/fixtures/research/README.md",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/jest.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/junit.xml",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/pass.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/pytest.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/pytest_native.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/pytest_short.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/pytest_tbno.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/tap.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/unittest.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/fixtures/research/vitest.log",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_file_imports.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_init_team.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_registry.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_research.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_security.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_settings.py",
+     "type": "blob"
+    },
+    {
+     "path": "tests/test_task_ids.py",
+     "type": "blob"
+    }
+   ]
+  },
+  "/repos/JamshidS/aiset/contents/pyproject.toml?ref=a1e65e3a920b22fde94dc127bc9847efc7aac0ff": {
+   "encoding": "base64",
+   "content": "W2J1aWxkLXN5c3RlbV0KcmVxdWlyZXMgPSBbInNldHVwdG9vbHM+PTc3Il0KYnVpbGQtYmFja2VuZCA9ICJzZXR1cHRvb2xzLmJ1aWxkX21ldGEiCgpbcHJvamVjdF0KbmFtZSA9ICJhaXNldC1jbGkiCnZlcnNpb24gPSAiMC4xLjAiCmRlc2NyaXB0aW9uID0gIlR1cm4geW91ciByZXBvcyBpbnRvIGEgdGVhbSBvZiBDbGF1ZGUgQ29kZSBhZ2VudHMgd2l0aCBwZXJzaXN0ZW50IG1lbW9yeSwgY29vcmRpbmF0ZWQgdGFza3MsIGFuZCBhIGxpdmUgZGFzaGJvYXJkLiIKcmVhZG1lID0gIlJFQURNRS5tZCIKbGljZW5zZSA9ICJNSVQiCmxpY2Vuc2UtZmlsZXMgPSBbIkxJQ0VOU0UiXQphdXRob3JzID0gW3sgbmFtZSA9ICJKYW1zaGlkIFNhZGlrIiB9XQpyZXF1aXJlcy1weXRob24gPSAiPj0zLjkiCmRlcGVuZGVuY2llcyA9IFtdCmtleXdvcmRzID0gWyJjbGF1ZGUtY29kZSIsICJhaS1hZ2VudHMiLCAibXVsdGktYWdlbnQiLCAiZGV2ZWxvcGVyLXRvb2xzIiwgImNvZGUtaW50ZWxsaWdlbmNlIiwgImRhc2hib2FyZCJdCmNsYXNzaWZpZXJzID0gWwogICAgIkRldmVsb3BtZW50IFN0YXR1cyA6OiAzIC0gQWxwaGEiLAogICAgIkVudmlyb25tZW50IDo6IENvbnNvbGUiLAogICAgIkVudmlyb25tZW50IDo6IFdlYiBFbnZpcm9ubWVudCIsCiAgICAiSW50ZW5kZWQgQXVkaWVuY2UgOjogRGV2ZWxvcGVycyIsCiAgICAiT3BlcmF0aW5nIFN5c3RlbSA6OiBPUyBJbmRlcGVuZGVudCIsCiAgICAiUHJvZ3JhbW1pbmcgTGFuZ3VhZ2UgOjogUHl0aG9uIDo6IDMiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzIDo6IE9ubHkiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzLjkiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzLjEwIiwKICAgICJQcm9ncmFtbWluZyBMYW5ndWFnZSA6OiBQeXRob24gOjogMy4xMSIsCiAgICAiUHJvZ3JhbW1pbmcgTGFuZ3VhZ2UgOjogUHl0aG9uIDo6IDMuMTIiLAogICAgIlByb2dyYW1taW5nIExhbmd1YWdlIDo6IFB5dGhvbiA6OiAzLjEzIiwKICAgICJUb3BpYyA6OiBTb2Z0d2FyZSBEZXZlbG9wbWVudCIsCiAgICAiVG9waWMgOjogU29mdHdhcmUgRGV2ZWxvcG1lbnQgOjogUXVhbGl0eSBBc3N1cmFuY2UiLApdCgpbcHJvamVjdC51cmxzXQpIb21lcGFnZSA9ICJodHRwczovL2dpdGh1Yi5jb20vSmFtc2hpZFMvYWlzZXQiCkRvY3VtZW50YXRpb24gPSAiaHR0cHM6Ly9naXRodWIuY29tL0phbXNoaWRTL2Fpc2V0L2Jsb2IvbWFzdGVyL2RvY3MvVVNFUi1HVUlERS5tZCIKSXNzdWVzID0gImh0dHBzOi8vZ2l0aHViLmNvbS9KYW1zaGlkUy9haXNldC9pc3N1ZXMiCkNoYW5nZWxvZyA9ICJodHRwczovL2dpdGh1Yi5jb20vSmFtc2hpZFMvYWlzZXQvYmxvYi9tYXN0ZXIvQ0hBTkdFTE9HLm1kIgoKW3Byb2plY3Quc2NyaXB0c10KYWlzZXQgPSAiYWlzZXQuc2VydmVyOm1haW4iCnRlYW1tYXAgPSAiYWlzZXQudGVhbW1hcDpjbGkiCmFpc2V0LWluaXQgPSAiYWlzZXQuaW5pdF90ZWFtOm1haW4iCgpbdG9vbC5zZXR1cHRvb2xzLnBhY2thZ2VzLmZpbmRdCndoZXJlID0gWyJzcmMiXQoKW3Rvb2wuc2V0dXB0b29scy5wYWNrYWdlLWRhdGFdCmFpc2V0ID0gWyJyb3N0ZXIuanNvbiIsICJ0ZWFtbWFwX3RzLmpzIiwgInN0YXRpYy8qIiwgInRlbXBsYXRlcy8qIl0KClt0b29sLnJ1ZmZdCnRhcmdldC12ZXJzaW9uID0gInB5MzkiCgpbdG9vbC5ydWZmLmxpbnRdCiMgc2hvcnQgbmFtZXMgKGwsIGkpIGFuZCBuYW1lZCBsYW1iZGFzIGFyZSBwYXJ0IG9mIHRoZSBob3VzZSBzdHlsZQppZ25vcmUgPSBbIkU3MzEiLCAiRTc0MSJdCgpbdG9vbC5weXRlc3QuaW5pX29wdGlvbnNdCnRlc3RwYXRocyA9IFsidGVzdHMiXQpweXRob25wYXRoID0gWyJzcmMiXQoK"
+  },
+  "/repos/JamshidS/aiset/contents/tests/test_workspace_slug.py?ref=6dc09a33a1b721b1d35f2a4b7ccdc316769ac279": {
+   "encoding": "base64",
+   "content": "IiIiV29ya3NwYWNlIHNsdWcgYW5kIHRoZSBzZXNzaW9uIGZpbHRlcjogbWF0Y2hpbmcgQ2xhdWRlIENvZGUncyBwcm9qZWN0IGZvbGRlcnMuIiIiCmltcG9ydCBvcwppbXBvcnQgc3lzCmltcG9ydCB1bml0dGVzdAoKc3lzLnBhdGguaW5zZXJ0KDAsIG9zLnBhdGguam9pbihvcy5wYXRoLmRpcm5hbWUob3MucGF0aC5hYnNwYXRoKF9fZmlsZV9fKSksICIuLiIsICJzcmMiKSkKCmZyb20gYWlzZXQgaW1wb3J0IGNvcmUgICMgbm9xYTogRTQwMgpmcm9tIGFpc2V0LndvcmtzcGFjZSBpbXBvcnQgc2x1ZyAgIyBub3FhOiBFNDAyCgoKS0VFUCA9IHNldCgiYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkiKQoKCmRlZiBjbGF1ZGVfY29kZV9mb2xkZXIocGF0aCk6CiAgICAiIiJIb3cgQ2xhdWRlIENvZGUgbmFtZXMgYSBwcm9qZWN0IGZvbGRlcjoga2VlcCBbQS1aYS16MC05XSBwZXIgVVRGLTE2IHVuaXQsIHRoZW4gbG93ZXJjYXNlLgoKICAgIE1pcnJvcnMgdGhlIEpTIGJlaGF2aW91ciB0aGUgb2ZmaWNlIGhhcyB0byBtYXRjaC4gRW5jb2RpbmcgdG8gVVRGLTE2IGFuZAogICAgd2Fsa2luZyBpdCB0d28gYnl0ZXMgYXQgYSB0aW1lIGlzIHdoYXQgbWFrZXMgYW4gZW1vamkgY29zdCB0d28gZGFzaGVzOiBpdCBpcwogICAgb25lIGNoYXJhY3RlciBidXQgdHdvIGNvZGUgdW5pdHMsIGFuZCBuZWl0aGVyIHVuaXQgaXMgYWxwaGFudW1lcmljLgogICAgIiIiCiAgICB1bml0cyA9IHBhdGguZW5jb2RlKCJ1dGYtMTYtbGUiKQogICAgb3V0ID0gW10KICAgIGZvciBpIGluIHJhbmdlKDAsIGxlbih1bml0cyksIDIpOgogICAgICAgIHVuaXQgPSB1bml0c1tpXSB8ICh1bml0c1tpICsgMV0gPDwgOCkKICAgICAgICBjaCA9IGNocih1bml0KQogICAgICAgIG91dC5hcHBlbmQoY2ggaWYgY2ggaW4gS0VFUCBlbHNlICItIikKICAgIHJldHVybiAiIi5qb2luKG91dCkubG93ZXIoKQoKCg=="
+  }
+ }
+}

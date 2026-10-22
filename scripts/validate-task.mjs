@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // Checks that a task is usable: its judge fails every requirement on the starting repo and passes every requirement and
 // gate on the reference solution, with R0 (nothing that worked before broke) holding on both.
-// Usage: node scripts/validate-task.mjs <task-id> [<task-id> ...]
+// Usage: node scripts/validate-task.mjs [--tasks-dir <dir>] <task-id> [<task-id> ...]
+// --tasks-dir is another tasks folder, such as the private exam's (TIERS.md); the default is this repository's tasks/.
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { parseArgs } from "node:util";
 
 const root = join(new URL(".", import.meta.url).pathname, "..");
-const ids = process.argv.slice(2);
+const { values: options, positionals: ids } = parseArgs({ options: { "tasks-dir": { type: "string" } }, allowPositionals: true });
+const tasksDir = resolve(options["tasks-dir"] ?? join(root, "tasks"));
 if (ids.length === 0) {
-	console.error("usage: node scripts/validate-task.mjs <task-id> [<task-id> ...]");
+	console.error("usage: node scripts/validate-task.mjs [--tasks-dir <dir>] <task-id> [<task-id> ...]");
 	process.exit(2);
 }
 
@@ -42,7 +45,7 @@ function judge(taskDir, tree) {
 
 let failed = 0;
 for (const id of ids) {
-	const taskDir = join(root, "tasks", id);
+	const taskDir = join(tasksDir, id);
 	const problems = [];
 	for (const part of ["task.json", "request.md", "repo", "judge/judge.mjs", "reference"]) {
 		if (!existsSync(join(taskDir, part))) problems.push(`missing ${part}`);

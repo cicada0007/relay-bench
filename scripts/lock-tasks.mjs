@@ -8,10 +8,14 @@
 //   node scripts/lock-tasks.mjs --check    exits 1 if any task differs from the lock
 //   --tasks-dir <dir>                      another tasks folder, such as the private exam's (TIERS.md); its lock is the
 //                                          TASKS.lock.json beside that folder, so the exam's lock stays private with it
+//
+// An exam or check task also needs a founder's approval (scripts/approve-task.mjs). The lock records who approved it,
+// and a task that is not approved, or was approved by its own drafter, counts as a difference: a counted run refuses it.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { taskHashes } from "../runner/judge.mjs";
+import { approvalProblems, isSealed } from "./approve-task.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const DEFAULT_TASKS = join(ROOT, "tasks");
@@ -24,7 +28,12 @@ export function currentTasks(tasksDir = DEFAULT_TASKS) {
 		const dir = join(tasksDir, id);
 		if (!existsSync(join(dir, "task.json"))) continue;
 		const task = JSON.parse(readFileSync(join(dir, "task.json"), "utf8"));
-		tasks[id] = { kind: task.kind, private: task.private === true, hashes: taskHashes(dir) };
+		tasks[id] = {
+			kind: task.kind,
+			private: task.private === true,
+			...(isSealed(task) ? { tier: task.tier, draftedBy: task.draftedBy ?? null, approvedBy: task.approvedBy ?? null } : {}),
+			hashes: taskHashes(dir),
+		};
 	}
 	return tasks;
 }
@@ -43,6 +52,8 @@ export function lockDifferences(ids, tasksDir = DEFAULT_TASKS) {
 			for (const part of Object.keys(lock[id].hashes)) {
 				if (lock[id].hashes[part] !== now[id].hashes[part]) differences.push({ id, what: `${part} changed` });
 			}
+			const task = JSON.parse(readFileSync(join(tasksDir, id, "task.json"), "utf8"));
+			for (const problem of approvalProblems(task)) differences.push({ id, what: problem });
 		}
 	}
 	return differences;
@@ -61,4 +72,6 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 	const tasks = currentTasks(tasksDir);
 	writeFileSync(lockPath, `${JSON.stringify({ lockedAt: new Date().toISOString(), tasks }, null, 2)}\n`);
 	console.log(`${lockPath}: ${Object.keys(tasks).length} tasks locked`);
+	const unapproved = Object.keys(tasks).filter((id) => tasks[id].tier && approvalProblems(JSON.parse(readFileSync(join(tasksDir, id, "task.json"), "utf8"))).length);
+	if (unapproved.length) console.log(`not approved, so a counted run refuses them: ${unapproved.join(", ")}`);
 }
