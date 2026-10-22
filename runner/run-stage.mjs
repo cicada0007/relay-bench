@@ -68,10 +68,10 @@ const recordKey = (r) => `${r.test}|${r.task}|${r.tool}|${r.model}|${r.fault?.ki
 
 if (counted) {
 	const { lockDifferences } = await import("../scripts/lock-tasks.mjs");
-	const differences = lockDifferences(taskIds());
+	const differences = lockDifferences(taskIds(), args["tasks-dir"]);
 	if (differences.length) {
 		for (const d of differences) console.error(`${d.id}: ${d.what}`);
-		throw new Error(`test ${args.test} is counted and its tasks do not match TASKS.lock.json; nothing was run`);
+		throw new Error(`test ${args.test} is counted and its tasks do not match their lock; nothing was run`);
 	}
 }
 
