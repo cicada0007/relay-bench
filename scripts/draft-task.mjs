@@ -17,7 +17,7 @@
 // be judged costs no model call. Then validate the task with validate-task.mjs, as every task is.
 //
 //   node scripts/draft-task.mjs --candidate <id> \
-//     --candidates ../relay-exam/candidates.jsonl --tasks-dir ../relay-exam/tasks [--model gpt-6.1-sol] [--tier exam]
+//     --candidates ../relay-exam/candidates.jsonl --tasks-dir ../relay-exam/tasks [--model gpt-6.1-sol] [--tier exam] [--level 1]
 //
 // The model's key is OPENAI_API_KEY, from the environment. It reads the issue from the GitHub API (GITHUB_TOKEN or
 // GH_TOKEN if set; public issues need none) and clones the public repository read-only. Nothing is written to GitHub.
@@ -170,8 +170,9 @@ function addedSourceLines(clone, base, head, files) {
  * Drafts one task; returns { id, dir, checks }. `model` is the drafting client ({ complete }), `github` a read-only
  * GitHub client ({ get }). Builds everything in a scratch folder and moves it into `tasksDir` only when it all works.
  */
-export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, tier = "exam", model, github, cloneUrl, now = new Date(), log = () => {} }) {
+export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, tier = "exam", level = 1, model, github, cloneUrl, now = new Date(), log = () => {} }) {
 	if (!["exam", "check"].includes(tier)) throw new Error(`--tier must be exam or check, not ${tier}`);
+	if (!Number.isInteger(level) || level < 1) throw new Error(`--level must be a whole number from 1, not ${level}`);
 	const id = candidate.id;
 	if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error(`not a task id: ${id}`);
 	const target = join(tasksDir, id);
@@ -276,6 +277,8 @@ export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, 
 			gates,
 			private: true,
 			tier,
+			// The size band it was mined in (scripts/saturation.mjs): a harder level opens when the one below saturates.
+			level,
 			draftedBy: `openai/${drafted.model}`,
 			draftedAt: now.toISOString(),
 			source: {
@@ -308,6 +311,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			"tasks-dir": { type: "string" },
 			model: { type: "string", default: DEFAULT_MODEL },
 			tier: { type: "string", default: "exam" },
+			level: { type: "string", default: "1" },
 		},
 	});
 	for (const name of ["candidate", "candidates", "tasks-dir"]) if (!values[name]) throw new Error(`--${name} is required`);
@@ -325,6 +329,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		tasksDir,
 		modelId: values.model,
 		tier: values.tier,
+		level: Number(values.level),
 		model: openaiClient({ apiKey: process.env.OPENAI_API_KEY }),
 		github: githubClient({ token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN }),
 		log: (line) => console.log(line),

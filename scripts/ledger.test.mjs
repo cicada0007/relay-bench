@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { anchorsPathFor, makeAnchors, writeAnchors } from "../runner/anchors.mjs";
+import { makePin, pinPathFor, writePin } from "../runner/pins.mjs";
+import { currentTasks, lockPathFor } from "./lock-tasks.mjs";
 import { appendEntry, emptyLedger, ledgerProblems, quarterRange, signerProblems, trend } from "./ledger.mjs";
 
 const GATE = new URL("../runner/gate.mjs", import.meta.url).pathname;
@@ -28,9 +30,14 @@ function exam(n = 100) {
 	}
 	const anchors = anchorsPathFor(tasks, "anchors-v1");
 	writeAnchors(anchors, makeAnchors({ tasksDir: tasks, ids: Array.from({ length: 20 }, (_, i) => `t${String(i).padStart(3, "0")}`), version: "anchors-v1" }));
-	return { root, tasks, anchors, out: join(root, "runs"), ledger: join(root, "ledger.json") };
+	const locked = currentTasks(tasks);
+	writeFileSync(lockPathFor(tasks), JSON.stringify({ lockedAt: "2026-10-23T00:00:00Z", tasks: locked }));
+	for (const release of ["0.6.122", "0.6.123", "0.6.124"]) writePin(pinPathFor(tasks, release), makePin({ tasksDir: tasks, release }));
+	const judges = Object.fromEntries(Object.entries(locked).map(([id, t]) => [id, t.hashes.judge]));
+	return { root, tasks, anchors, judges, out: join(root, "runs"), ledger: join(root, "ledger.json") };
 }
 
+let JUDGES = {};
 function records(out, test, champion, candidate, champ, cand, n = 100) {
 	mkdirSync(out, { recursive: true });
 	const lines = [];
@@ -40,7 +47,7 @@ function records(out, test, champion, candidate, champ, cand, n = 100) {
 			[`relay@${champion}`, champ],
 			[`relay@${candidate}`, cand(i)],
 		]) {
-			lines.push(JSON.stringify({ runId: `${test}-${task}-${tool}`, test, task, taskKind: "everyday", tool, model: "claude-haiku-5-5", rep: 1, score: { share }, usage: { costUsd: 0.1 }, wallMs: 60_000 }));
+			lines.push(JSON.stringify({ runId: `${test}-${task}-${tool}`, test, task, taskKind: "everyday", tool, model: "claude-haiku-5-5", rep: 1, score: { share }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes: { judge: JUDGES[task] } }));
 		}
 	}
 	appendFileSync(join(out, "records.jsonl"), `${lines.join("\n")}\n`);
@@ -56,6 +63,7 @@ const write = (e, test, ...extra) => node([LEDGER, "write", "--test", test, "--o
 
 test("the ledger refuses every write that is not a gate on the exam that stopped with PASS", () => {
 	const e = exam();
+	JUDGES = e.judges;
 	const refused = (r, pattern) => {
 		assert.equal(r.status, 1, r.stdout + r.stderr);
 		assert.match(r.stderr, pattern);
@@ -93,11 +101,12 @@ test("the ledger refuses every write that is not a gate on the exam that stopped
 	assert.equal(runGate(e, "gate-regraded", "0.6.121", "0.6.122").status, 0);
 	const regrades = Array.from({ length: 100 }, (_, i) => ({ runId: `gate-regraded-t${String(i).padStart(3, "0")}-relay@0.6.122`, rejudgedAt: "2026-10-24", score: { share: 0 } }));
 	writeFileSync(join(e.out, "rejudged.jsonl"), `${regrades.map((g) => JSON.stringify(g)).join("\n")}\n`);
-	refused(write(e, "gate-regraded"), /the records give BLOCK/);
+	refused(write(e, "gate-regraded"), /the records give UNRESOLVED \(graders not pinned\)/);
 });
 
 test("a safety flag found after the gate decided still keeps the release out", () => {
 	const e = exam();
+	JUDGES = e.judges;
 	records(e.out, "gate-0.6.122", "0.6.121", "0.6.122", 0.2, () => 0.8);
 	assert.equal(runGate(e, "gate-0.6.122", "0.6.121", "0.6.122").status, 0);
 	appendFileSync(join(e.out, "records.jsonl"), `${JSON.stringify({ runId: "late", test: "gate-0.6.122", task: "t999", tool: "relay@0.6.122", safetyFlags: ["secret-leaked"] })}\n`);
@@ -108,6 +117,7 @@ test("a safety flag found after the gate decided still keeps the release out", (
 
 test("a PASS is written once, numbers only, signed by a person, and chained to the release before it", () => {
 	const e = exam();
+	JUDGES = e.judges;
 	records(e.out, "gate-0.6.122", "0.6.121", "0.6.122", 0.2, (i) => (i < 20 ? 0.3 : 0.8));
 	assert.equal(runGate(e, "gate-0.6.122", "0.6.121", "0.6.122").status, 0);
 	assert.match(write(e, "gate-0.6.122", "--signed-by", "claude").stderr, /Relay never signs its own release/);
@@ -122,6 +132,7 @@ test("a PASS is written once, numbers only, signed by a person, and chained to t
 	assert.ok(Math.abs(entry.anchors.difference - 10) < 1e-9);
 	assert.ok(entry.anchors.se > 0 && entry.exam.low > 0);
 	assert.deepEqual(entry.signers, ["arnav"]);
+	assert.match(entry.graders, /^[0-9a-f]{64}$/);
 	assert.equal(entry.model, "claude-haiku-5-5");
 	const text = JSON.stringify(ledger);
 	assert.doesNotMatch(text, /better|worse|"label"/i, "numbers only");

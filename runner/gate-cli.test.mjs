@@ -1,12 +1,14 @@
 // runner/gate.mjs end to end on throwaway folders and made-up records: no model, no sandbox, nothing spent.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { anchorsPathFor, makeAnchors, writeAnchors } from "./anchors.mjs";
 import { exposurePathFor, readExposures } from "./exposure.mjs";
+import { currentTasks, lockPathFor } from "../scripts/lock-tasks.mjs";
+import { makePin, pinPathFor, writePin } from "./pins.mjs";
 
 const GATE = new URL("./gate.mjs", import.meta.url).pathname;
 const CHAMP = "relay@0.6.121";
@@ -17,8 +19,9 @@ function gate(args, env = {}) {
 	return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-/** Appends graded runs for tasks [from, to): the champion meets `champ`, the candidate `cand(i)`. */
-function addRecords(out, test, from, to, champ, cand, prefix = "t") {
+/** Appends graded runs for tasks [from, to): the champion meets `champ`, the candidate `cand(i)`. `judges` maps a task
+ *  to its judge fingerprint, as run-one.mjs records it. */
+function addRecords(out, test, from, to, champ, cand, prefix = "t", judges = null) {
 	mkdirSync(out, { recursive: true });
 	const lines = [];
 	for (let i = from; i < to; i++) {
@@ -27,7 +30,8 @@ function addRecords(out, test, from, to, champ, cand, prefix = "t") {
 			[CHAMP, champ],
 			[CAND, cand(i)],
 		]) {
-			lines.push(JSON.stringify({ runId: `${test}-${task}-${tool}`, test, task, taskKind: "everyday", tool, rep: 1, score: { share }, usage: { costUsd: 0.1 }, wallMs: 60_000 }));
+			const taskHashes = judges ? { judge: judges[task] } : undefined;
+			lines.push(JSON.stringify({ runId: `${test}-${task}-${tool}`, test, task, taskKind: "everyday", tool, rep: 1, score: { share }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes }));
 		}
 	}
 	appendFileSync(join(out, "records.jsonl"), `${lines.join("\n")}\n`);
@@ -91,12 +95,16 @@ function exam(n) {
 	}
 	const anchors = anchorsPathFor(tasks, "anchors-v1");
 	writeAnchors(anchors, makeAnchors({ tasksDir: tasks, ids: Array.from({ length: 20 }, (_, i) => `t${String(i).padStart(3, "0")}`), version: "anchors-v1" }));
-	return { root, tasks, anchors, out: join(root, "runs", "gate") };
+	const locked = currentTasks(tasks);
+	writeFileSync(lockPathFor(tasks), JSON.stringify({ lockedAt: "2026-10-23T00:00:00Z", tasks: locked }));
+	writePin(pinPathFor(tasks, "0.6.122"), makePin({ tasksDir: tasks, release: "0.6.122" }));
+	const judges = Object.fromEntries(Object.entries(locked).map(([id, t]) => [id, t.hashes.judge]));
+	return { root, tasks, anchors, judges, out: join(root, "runs", "gate") };
 }
 
 test("a counted exam gate needs a plan and an anchor set, and counts each look against the leak budget", () => {
 	const e = exam(100);
-	addRecords(e.out, "gate-0.6.122", 0, 100, 0.2, () => 0.8);
+	addRecords(e.out, "gate-0.6.122", 0, 100, 0.2, () => 0.8, "t", e.judges);
 	const base = ["--test", "gate-0.6.122", "--tier", "exam", "--tasks-dir", e.tasks, "--out", e.out];
 	assert.match(gate([...base, "--plan-tasks", "100"]).err, /anchor set/);
 	assert.match(gate([...base, "--anchors", e.anchors]).err, /fixes its planned tasks/);
@@ -141,4 +149,23 @@ test("--run --dry-run plans the first look's tasks, anchors first, and spends no
 	assert.match(r.out, /look 1: 20 of 40 planned tasks/);
 	assert.match(r.out, /40 runs planned/);
 	assert.equal(existsSync(join(root, "runs", "dev-g.looks.json")), false, "a dry run keeps no state");
+});
+
+test("an exam gate refuses runs graded by a judge other than the one pinned for the release", () => {
+	const e = exam(100);
+	const base = ["--test", "gate-0.6.122", "--tier", "exam", "--tasks-dir", e.tasks, "--out", e.out, "--plan-tasks", "100", "--anchors", e.anchors];
+	addRecords(e.out, "gate-0.6.122", 0, 100, 0.2, () => 0.8, "t", e.judges);
+	// A judge fixed after the pin grades one run again: the release keeps its pinned graders.
+	writeFileSync(join(e.out, "rejudged.jsonl"), `${JSON.stringify({ runId: "gate-0.6.122-t005-relay@0.6.122", rejudgedAt: "2026-10-24", judgeTreeHash: "0".repeat(64), score: { share: 1 } })}\n`);
+	const r = gate(base);
+	assert.equal(r.code, 20, r.out + r.err);
+	assert.match(r.out, /graders not pinned/);
+	assert.match(r.out, /t005: graded by a judge other than the one pinned for 0\.6\.122/);
+
+	const bare = exam(100);
+	rmSync(pinPathFor(bare.tasks, "0.6.122"));
+	addRecords(bare.out, "gate-0.6.122", 0, 100, 0.2, () => 0.8, "t", bare.judges);
+	const unpinned = gate(["--test", "gate-0.6.122", "--tier", "exam", "--tasks-dir", bare.tasks, "--out", bare.out, "--plan-tasks", "100", "--anchors", bare.anchors]);
+	assert.notEqual(unpinned.code, 0);
+	assert.match(unpinned.err, /no graders are pinned for 0\.6\.122/);
 });
