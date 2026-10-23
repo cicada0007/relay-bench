@@ -76,3 +76,14 @@ test("each arm runs only the providers it supports", () => {
 	assert.ok(armRuns(ARMS.codex, "gpt-6-luna") && !armRuns(ARMS.codex, "claude-haiku-5-5"));
 	for (const tool of ["claude-code", "prime-agent", "hermes"]) assert.ok(!armRuns(ARMS[tool], "gpt-6-luna"), tool);
 });
+
+test("a local build is Relay from a package, named by a version no release channel publishes", () => {
+	const a = armFor("relay@0.6.122-loop.2026w44");
+	assert.equal(a.arm, ARMS.relay);
+	assert.equal(a.relayPackage, true);
+	assert.equal(a.relayVersion, null);
+	assert.equal(a.localBuild, "0.6.122-loop.2026w44");
+	assert.equal(armFor("relay@0.6.122-loop.2026w44.2").localBuild, "0.6.122-loop.2026w44.2");
+	for (const name of ["relay@0.6.122-loop", "relay@0.6.122-loop.w44", "relay@0.6.122-loop.2026w44;rm"]) assert.equal(armFor(name), null, name);
+	assert.throws(() => relayInstallCommand("0.6.122-loop.2026w44"), /not a released Relay version/);
+});

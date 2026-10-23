@@ -9,7 +9,8 @@
 // - lanes.json: the combined candidate's manifest for the gate (runner/gate.mjs --combined), with two lanes or more;
 // - ledger-preview.json: the entry scripts/ledger.mjs would add, which it writes only after the gate on the exam stops
 //   with PASS and a person signs it.
-// The loop never opens a pull request in relay-harness; a person reads this and decides.
+// The cycle never opens a pull request in relay-harness. The autopilot (loop/autopilot.mjs, AUTOPILOT.md) opens one
+// from this package only after the gate on the exam passes, and a person decides by merging it or not.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addsNewFile, newFileDiff, newFileText, serializeLike, setPath, unifiedDiff } from "./diff.mjs";

@@ -10,7 +10,8 @@
 //   prescreen   PAID: each proposal's build against the champion on the dev set (practice), then the selection set
 //               (the check tier's one word), within each lane's fixed budget and the command's --spend-cap
 //   package     one combined release: the PR body, the patch, the gate's manifest and the ledger entry it would make,
-//               written to files; the loop never opens a pull request in relay-harness
+//               written to files; the cycle never opens a pull request in relay-harness (the autopilot,
+//               loop/autopilot.mjs, opens one only after the gate on the exam passes)
 //
 //   node loop/cycle.mjs --records runs/round-1/records.jsonl [--records runs/round-1/F/records.jsonl] \
 //     --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 \
@@ -214,6 +215,11 @@ export async function runCycle({
 			const blocked = paidBlock() ?? money.fits(t.lane, worst);
 			if (blocked) {
 				waiting.push({ target: `${t.lane}|${t.prompt.id}`, worstUsd: worst, why: blocked });
+				continue;
+			}
+			// No key for the writer: the change waits, and the cycle goes on with what is free or already written.
+			if (!writer && !env.RELAY_BENCH_ANTHROPIC_KEY) {
+				waiting.push({ target: `${t.lane}|${t.prompt.id}`, worstUsd: worst, why: "the writer needs RELAY_BENCH_ANTHROPIC_KEY in the environment" });
 				continue;
 			}
 			const w = writer ?? anthropicWriter({ apiKey: env.RELAY_BENCH_ANTHROPIC_KEY, model: m });

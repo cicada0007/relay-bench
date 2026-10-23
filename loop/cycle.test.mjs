@@ -154,9 +154,10 @@ test("with a cap and a person's approval the cycle pre-screens, packages one rel
 	assert.ok(!again.some((c) => passed.some((x) => c.includes(`dev-loop-${x.id}`))));
 });
 
-test("the loop never runs gh or opens a pull request: no source file of it can", () => {
+test("the loop never runs gh or opens a pull request: no source file of it can, but the autopilot's, after a gate PASS", () => {
 	const dir = new URL(".", import.meta.url).pathname;
-	for (const name of readdirSync(dir).filter((n) => n.endsWith(".mjs") && !n.endsWith(".test.mjs"))) {
+	// loop/autopilot.mjs opens one pull request after the exam's gate passed (AUTOPILOT.md; loop/autopilot.test.mjs).
+	for (const name of readdirSync(dir).filter((n) => n.endsWith(".mjs") && !n.endsWith(".test.mjs") && n !== "autopilot.mjs")) {
 		const text = readFileSync(join(dir, name), "utf8");
 		assert.doesNotMatch(text, /["'`]gh["'`]|\bgh\s+pr\b|api\.github\.com|pulls/, name);
 	}
@@ -177,4 +178,13 @@ test("the command line: a dry run exits 0, a run without a cap exits 3 before pa
 	assert.ok(existsSync(join(w.out, "2026-W44", "report.md")));
 	assert.match(isoWeek(new Date("2026-10-23T12:00:00Z")), /^2026-W43$/);
 	assert.equal(isoWeek(new Date("2027-01-01T00:00:00Z")), "2026-W53");
+});
+
+test("without the writer's key, the written changes wait and the cycle goes on", async () => {
+	const w = world();
+	const r = await runCycle(base(w, { spendCap: 20, exec: fakeExec({}), env: {} }));
+	assert.ok(r.state.waitingWrites.length >= 2);
+	assert.ok(r.state.waitingWrites.every((x) => x.why === "the writer needs RELAY_BENCH_ANTHROPIC_KEY in the environment" && x.worstUsd > 0));
+	assert.ok(r.state.proposals.some((p) => p.lane === "config"), "the free lanes still propose");
+	assert.ok(!r.state.proposals.some((p) => p.lane === "prompts"));
 });

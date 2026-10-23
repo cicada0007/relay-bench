@@ -17,6 +17,10 @@
 //   --anchors <file>   the anchor set scored with every release (runner/anchors.mjs); required for a counted exam gate.
 //   --combined <file>  a combined candidate: { "release": "<candidate>", "lanes": [{ "lane": "...", "change": "..." }] },
 //                      several lane changes judged as one release, once.
+//   --candidate-package <tgz>
+//                      the candidate is a local build (GATE.md, amendment 4): --candidate 0.6.122-loop.2026w44, the
+//                      package's version, and every candidate run installs this tarball. Its SHA-256 is fixed at the
+//                      first look; a look whose candidate runs installed anything else is UNRESOLVED ("build differs").
 // On the exam and check tiers every look is counted against the leak budget (runner/exposure.mjs), and every run must
 // have been graded by the judges pinned for the candidate (runner/pins.mjs; --run pins them at the first look).
 //
@@ -27,14 +31,15 @@
 // State: <out>/<test>.looks.json (the design, the task order, every look taken), <out>/<test>.gate.json (the last look).
 // Exit codes: 0 PASS, 10 BLOCK, 20 UNRESOLVED (GATE.md).
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { loadRecords, rng, SEED } from "./analyze.mjs";
 import { anchorProblems, loadAnchors } from "./anchors.mjs";
-import { parseModelArm, RELAY_VERSION_PATTERN } from "./arms.mjs";
+import { isLocalBuild, parseModelArm, RELAY_VERSION_PATTERN } from "./arms.mjs";
 import { budgetProblems, exposurePathFor, loadBudget, readExposures, recordExposure, SEALED } from "./exposure.mjs";
-import { combinedProblems, designProblems, EXIT, FIXED_DESIGN, gate, lookSize, RULES, sharedTasks } from "./gate-analyze.mjs";
+import { buildProblems, combinedProblems, designProblems, EXIT, FIXED_DESIGN, gate, lookSize, RULES, sharedTasks } from "./gate-analyze.mjs";
 import { loadPin, makePin, pinFingerprint, pinPathFor, pinProblems, writePin } from "./pins.mjs";
 import { readTasks, selectTasks } from "./stage-tasks.mjs";
 
@@ -64,15 +69,19 @@ const { values: args } = parseArgs({
 		spending: { type: "string" },
 		anchors: { type: "string" },
 		combined: { type: "string" },
+		"candidate-package": { type: "string" },
 	},
 });
 for (const name of ["test", "champion", "candidate"]) if (!args[name]) throw new Error(`--${name} is required`);
 for (const name of ["champion", "candidate"]) {
 	// Model watch: the candidate may be the champion's release with a new model on a tier, 0.6.121+all+claude-sonnet-6.
-	if (!RELAY_VERSION_PATTERN.test(args[name]) && !(name === "candidate" && parseModelArm(args[name]))) {
-		throw new Error(`--${name} must be a released Relay version, such as 0.6.121${name === "candidate" ? ", or one with a model on a tier, such as 0.6.121+all+claude-sonnet-6" : ""}`);
+	// The autopilot: a local build with its package, 0.6.122-loop.2026w44 (amendment 4).
+	const local = name === "candidate" && isLocalBuild(args[name]);
+	if (!RELAY_VERSION_PATTERN.test(args[name]) && !(name === "candidate" && parseModelArm(args[name])) && !local) {
+		throw new Error(`--${name} must be a released Relay version, such as 0.6.121${name === "candidate" ? ", one with a model on a tier, such as 0.6.121+all+claude-sonnet-6, or a local build with --candidate-package, such as 0.6.122-loop.2026w44" : ""}`);
 	}
 }
+if (args["candidate-package"] && !isLocalBuild(args.candidate)) throw new Error(`--candidate-package is for a local build, such as 0.6.122-loop.2026w44, not ${args.candidate}`);
 if (args.champion === args.candidate) throw new Error("--champion and --candidate are the same version");
 const champion = `relay@${args.champion}`;
 const candidate = `relay@${args.candidate}`;
@@ -161,6 +170,20 @@ if (args.combined) {
 	throw new Error("this gate judges a combined candidate; pass its manifest again with --combined");
 }
 
+// A local build: the package's hash is fixed at the first look, and a look reads only runs that installed it.
+if (isLocalBuild(args.candidate)) {
+	if (args["candidate-package"]) {
+		const file = resolve(args["candidate-package"]);
+		if (!existsSync(file)) throw new Error(`no package at ${file}`);
+		const sha256 = createHash("sha256").update(readFileSync(file)).digest("hex");
+		if (state.candidatePackage && state.candidatePackage.sha256 !== sha256) {
+			throw new Error(`this gate judges the build ${state.candidatePackage.sha256.slice(0, 12)}; ${file} is ${sha256.slice(0, 12)}, and a build never changes mid-gate`);
+		}
+		state.candidatePackage = { version: args.candidate, sha256 };
+	} else if (!state.candidatePackage) throw new Error(`${args.candidate} is a local build: pass its package with --candidate-package`);
+	else if (args.run) throw new Error("--run installs the local build in every candidate run: pass --candidate-package");
+}
+
 const saveState = () => {
 	mkdirSync(out, { recursive: true });
 	writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
@@ -218,6 +241,7 @@ if (args.run) {
 			"--e2b-cap-usd", args["e2b-cap-usd"],
 			"--concurrency", args.concurrency,
 			"--out", out,
+			...(args["candidate-package"] ? ["--relay-package", resolve(args["candidate-package"])] : []),
 			...(args["dry-run"] ? ["--dry-run"] : []),
 		],
 		{ stdio: "inherit" },
@@ -293,8 +317,11 @@ if (sealed && counted) {
 	pin = { release: pinned.release, fingerprint: pinFingerprint(pinned), problems: pinProblems(records.filter((r) => inLook.has(r.task)), pinned) };
 }
 
-const result = gate(records, { champion, candidate, design, history, anchors, combined, exposure, pin });
-const refused = Boolean(result.exposure?.problems?.length || result.pin?.problems?.length);
+const build = state.candidatePackage
+	? { ...state.candidatePackage, problems: buildProblems(records.filter((r) => shared.includes(r.task)), candidate, state.candidatePackage) }
+	: null;
+const result = gate(records, { champion, candidate, design, history, anchors, combined, exposure, pin, build });
+const refused = Boolean(result.exposure?.problems?.length || result.pin?.problems?.length || result.build?.problems?.length);
 if (planned && result.look && !refused && !again) {
 	for (const e of reads) recordExposure(exposurePathFor(dir), e);
 	const at = new Date().toISOString();
@@ -323,6 +350,7 @@ if (args.json) {
 		console.log(`  anchors ${a.version}  ${f(a.champion)} and ${f(a.candidate)}: ${f(a.difference)} points, 95% interval ${f(a.low)} to ${f(a.high)}, ${a.tasks} of ${a.planned} tasks`);
 	}
 	if (result.combined) console.log(`  combined          ${result.combined.lanes.map((l) => `${l.lane} ${l.change}`).join(", ")}`);
+	if (result.build) console.log(`  local build       ${result.build.version}, package ${result.build.sha256.slice(0, 12)}`);
 	console.log(`  cost              ${result.costRatio === null ? "–" : `${f((result.costRatio - 1) * 100)}%`}`);
 	console.log(`  time              ${result.timeRatio === null ? "–" : `${f((result.timeRatio - 1) * 100)}%`}`);
 	console.log(`  false "done"      ${f(result.falseDone.candidate)}% against ${f(result.falseDone.champion)}%`);

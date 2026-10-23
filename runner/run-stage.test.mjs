@@ -59,3 +59,19 @@ test("an unreleased build runs only as relay@pkg, with its package, in a dev or 
 	assert.equal(ok.status, 0, ok.stderr);
 	assert.match(ok.stdout, /2 runs planned/);
 });
+
+test("a counted stage takes a package only for a local build, and gives it only that tool's runs", () => {
+	const root = mkdtempSync(join(tmpdir(), "stage-local-"));
+	const tasks = join(root, "tasks");
+	mkdirSync(join(tasks, "p1"), { recursive: true });
+	writeFileSync(join(tasks, "p1", "task.json"), JSON.stringify({ id: "p1", kind: "everyday" }));
+	const pkg = join(root, "relay.tgz");
+	writeFileSync(pkg, "not really a package");
+	const run = (tools, extra) =>
+		spawnSync(process.execPath, [STAGE, "--test", "gate-x", "--model", "claude-haiku-5-5", "--tools", tools, "--tasks", "p1", "--tasks-dir", tasks, "--reps", "1", "--cap-usd", "0.2", "--stage-cap-usd", "1", "--out", join(root, "runs"), "--dry-run", ...extra], { encoding: "utf8" });
+	assert.match(run("relay@0.6.121,relay@0.6.122-loop.2026w44", []).stderr, /relay@0\.6\.122-loop\.2026w44 needs --relay-package/);
+	assert.match(run("relay@0.6.121,relay@0.6.122", ["--relay-package", pkg]).stderr, /for dev and pilot tests only, or a local build's gate/);
+	assert.match(run("relay@pkg,relay@0.6.122-loop.2026w44", ["--relay-package", pkg]).stderr, /one package per stage/);
+	// Past the package rules, a counted stage still checks its tasks against their lock.
+	assert.match(run("relay@0.6.121,relay@0.6.122-loop.2026w44", ["--relay-package", pkg]).stderr, /is counted and its tasks do not match their lock/);
+});
