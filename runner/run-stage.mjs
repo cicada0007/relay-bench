@@ -170,7 +170,8 @@ if (args["dry-run"]) {
 }
 
 function runOne(job) {
-	return new Promise((resolve) => {
+	// `done`, not `resolve`: the arguments below use path's `resolve`, which a parameter of that name would hide.
+	return new Promise((done) => {
 		const child = spawn(
 			process.execPath,
 			[
@@ -185,7 +186,8 @@ function runOne(job) {
 		let text = "";
 		child.stdout.on("data", (c) => (text += c));
 		child.stderr.on("data", (c) => (text += c));
-		child.on("close", (code) => resolve({ code, text: text.replace(/(sk-(?:ant-|proj-|svcacct-|admin-)?|e2b_)[A-Za-z0-9_-]{8,}/g, "$1[MASKED]") }));
+		child.on("error", (error) => done({ code: null, text: `could not start run-one: ${error.message}` }));
+		child.on("close", (code) => done({ code, text: text.replace(/(sk-(?:ant-|proj-|svcacct-|admin-)?|e2b_)[A-Za-z0-9_-]{8,}/g, "$1[MASKED]") }));
 	});
 }
 

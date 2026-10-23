@@ -212,7 +212,10 @@ export function armFor(tool) {
 /** The installer command that puts one released Relay version in place for the sandbox user, kernel included. */
 export function relayInstallCommand(version) {
 	if (!RELAY_VERSION_PATTERN.test(version)) throw new Error(`not a released Relay version: ${version}`);
-	return `curl -fsSL https://relayevals.com/harness/install.sh | RELAY_VERSION=${version} RELAY_BOOTSTRAP_KERNEL_ON_INSTALL=1 DO_NOT_TRACK=1 sh && relay --version`;
+	// Into the folder first on a run's PATH (sandbox/template.mjs RUN_PATH), where the template's own Relay lives: the
+	// installer would otherwise pick npm's writable system folder, and `relay` would still be the template's version.
+	// `relay --version` prints on stderr in the sandbox, so both streams are read.
+	return `curl -fsSL https://relayevals.com/harness/install.sh | NPM_CONFIG_PREFIX=/home/user/.relay/npm-global RELAY_VERSION=${version} RELAY_BOOTSTRAP_KERNEL_ON_INSTALL=1 DO_NOT_TRACK=1 sh && relay --version 2>&1`;
 }
 
 function primeCommand({ model, gates, limitMinutes, prompt, extra }) {

@@ -197,7 +197,7 @@ try {
 		await work.files.write("/home/user/relay-test.tgz", pkg);
 		const installed = await sh(
 			work,
-			"npm install -g --prefix /home/user/.relay/npm-global --no-fund --no-audit --loglevel=error /home/user/relay-test.tgz && relay --version",
+			"npm install -g --prefix /home/user/.relay/npm-global --no-fund --no-audit --loglevel=error /home/user/relay-test.tgz && relay --version 2>&1",
 		);
 		if (installed.exitCode !== 0) throw new Error(`installing the Relay package failed: ${installed.stderr.slice(-400)}`);
 		record.relayPackageVersion = installed.stdout.trim().split("\n").pop();

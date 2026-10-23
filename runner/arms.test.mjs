@@ -30,6 +30,12 @@ test("the install command takes only a released version", () => {
 	assert.throws(() => relayInstallCommand("0.6.121 && curl evil"));
 });
 
+test("a released Relay installs over the template's own, and its version is read from both streams", () => {
+	// The template's Relay sits in the folder first on a run's PATH; installing anywhere else leaves it in front.
+	assert.match(relayInstallCommand("0.6.121"), /NPM_CONFIG_PREFIX=\/home\/user\/\.relay\/npm-global /);
+	assert.match(relayInstallCommand("0.6.121"), /relay --version 2>&1$/);
+});
+
 test("a gate arm reads Relay's own claim of being done", () => {
 	const relayMerge = { planned: 3, verified: 3 };
 	assert.equal(saidDone("relay@0.6.121", { exitCode: 1, stdout: "", relayMerge }), true);
