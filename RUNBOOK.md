@@ -148,27 +148,39 @@ and `record.json`. A judge fixed later re-grades every run of that task in the t
 
 ## The gate: a new Relay against the current one
 
-GATE.md fixes the rules; TIERS.md says which tasks a gate may use. A gate compares two released Relay versions on the
-same tasks, model and limits, and exits 0 (PASS), 10 (BLOCK) or 20 (UNRESOLVED).
+GATE.md fixes the rules (amendment 1 is gate v2); TIERS.md says which tasks a gate may use. A gate compares two released
+Relay versions on the same tasks, model and limits, and exits 0 (PASS), 10 (BLOCK) or 20 (UNRESOLVED).
 
 1. **See what it would run, free:** add `--dry-run` to the command below. Nothing starts and nothing is spent.
-2. **Run it** (paid, within the caps you give it, after a founder's yes):
+2. **Run it** (paid, within the caps you give it, after a founder's yes). A sequential gate with three looks over 120
+   tasks; each command runs the next look's tasks, then reads that look:
 
    ```
    node runner/gate.mjs --run --test gate-0.6.122 --champion 0.6.121 --candidate 0.6.122-beta.3 \
+     --looks 3 --plan-tasks 120 --spending obrien-fleming \
      --model claude-haiku-5-5 --tier practice --tasks kind:everyday,kind:long --reps 1 \
      --cap-usd 1 --stage-cap-usd 40 --e2b-cap-usd 20 --out runs/gate
    ```
 
-   Each run installs its version with Relay's own installer (`RELAY_VERSION`) and records what `relay --version`
-   printed. Run the same command again to resume.
-3. **Read it again later:** the same command without `--run`. The verdict is also saved as
-   `runs/gate/<test>.gate.json`.
+   Run the same command again for the next look while it prints `continue`. It stops at the first PASS or BLOCK and
+   then refuses to run more. Each run installs its version with Relay's own installer (`RELAY_VERSION`) and records
+   what `relay --version` printed. A run that fails inside a look is resumed by the same command. With one look, leave
+   out `--looks` and keep `--plan-tasks` (or let `--run` plan every chosen task).
+3. **Read it again later:** the same command without `--run`. The design, the task order and every look are kept in
+   `runs/gate/<test>.looks.json`; the last look's verdict in `runs/gate/<test>.gate.json`.
 
-On the exam tier, pass `--tier exam --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate`: the gate then runs
-every exam-tier task in that folder, refuses a tasks folder inside this repository, and refuses to write exam runs inside
-it. Lock the exam first with `node scripts/lock-tasks.mjs --tasks-dir ../relay-exam/tasks`; an exam task that is not
-approved stops a counted gate.
+On the exam tier, pass `--tier exam --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate --plan-tasks <n>
+--anchors ../relay-exam/anchors/anchors-v1.json`. The gate then runs the anchors first and then the exam's tasks,
+refuses a tasks folder inside this repository, and refuses to write exam runs inside it. Every run and every look is
+counted against the leak budget (`../relay-exam/exposure.jsonl`; lower it in `../relay-exam/leak-budget.json`). Lock
+the exam first with `node scripts/lock-tasks.mjs --tasks-dir ../relay-exam/tasks`; an exam task that is not approved
+stops a counted gate. Make the anchor set once, from locked tasks:
+`node scripts/anchors.mjs create --version anchors-v1 --tasks-dir ../relay-exam/tasks --sample 40`.
+
+Several lane changes released together are judged as one candidate with `--combined lanes.json`, a file
+`{ "release": "0.6.122-beta.3", "lanes": [{ "lane": "prompts", "change": "<commit>" }, ...] }`.
+
+Check the gate's own false-accept rates, free: `node runner/gate-null.mjs --sims 20000` (several minutes).
 
 ## Growing the exam
 

@@ -7,7 +7,7 @@
 //
 //   node runner/analyze.mjs --out runs/round-1 --test A [--json] [--relay relay@0.6.121]
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -100,12 +100,13 @@ export function analyze(records, { relay: relayTool = "relay" } = {}) {
 
 /** One test's records from <out>/records.jsonl. A run graded again after a judge fix (rejudge.mjs) counts with its latest grade. */
 export function loadRecords(out, test) {
-	const records = readFileSync(join(ROOT, out, "records.jsonl"), "utf8")
+	// `out` is relative to this repository, or absolute (the exam's runs live outside it).
+	const records = readFileSync(join(resolve(ROOT, out), "records.jsonl"), "utf8")
 		.split("\n")
 		.filter(Boolean)
 		.map((l) => JSON.parse(l))
 		.filter((r) => r.test === test);
-	const rejudgedPath = join(ROOT, out, "rejudged.jsonl");
+	const rejudgedPath = join(resolve(ROOT, out), "rejudged.jsonl");
 	if (existsSync(rejudgedPath)) {
 		const latest = new Map();
 		for (const line of readFileSync(rejudgedPath, "utf8").split("\n").filter(Boolean)) {
