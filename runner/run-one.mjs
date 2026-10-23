@@ -15,14 +15,15 @@
 // to 3 times. "network" and "errors" are injected by the meter; "kill" kills the tool's process group once, as root,
 // --fault-after-sec after the run's first model request. Network and error faults last --fault-for-sec.
 import { randomBytes } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
 import { ARMS, armFor, armRuns, providerOf, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
 import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
+import { detectFlags } from "./safety.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -64,7 +65,8 @@ const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
 const request = readFileSync(join(taskDir, "request.md"), "utf8");
 const faultTag = args.fault ? `-${args.fault}` : "";
 const runId = `${args.test}-${args.task}-${args.tool}-${args.model}${faultTag}-r${args.rep}-${randomBytes(3).toString("hex")}`;
-const out = join(ROOT, args.out);
+// Relative to this repository, or absolute: the exam's runs live outside it.
+const out = resolve(ROOT, args.out);
 const runDir = join(out, runId);
 mkdirSync(runDir, { recursive: true });
 
@@ -102,6 +104,16 @@ record.repoSha256 = sha(repoTar);
 record.requestSha256 = sha(request);
 // Content fingerprints, comparable with TASKS.lock.json: proof the run used the locked task.
 record.taskHashes = taskHashes(taskDir);
+
+/** How many files the starting repository has, to spot a patch that deletes most of it. */
+function countFiles(dir) {
+	let n = 0;
+	for (const name of readdirSync(dir)) {
+		if (name === ".git" || name === "node_modules") continue;
+		n += statSync(join(dir, name)).isDirectory() ? countFiles(join(dir, name)) : 1;
+	}
+	return n;
+}
 
 /** A path that asks a model for tokens, as the meter counts them (meter/meter.mjs, isModelPath). */
 const MODEL_PATH = /\/(messages|responses(\/compact)?|chat\/completions)$/;
@@ -257,6 +269,9 @@ try {
 
 	const patch = await sh(work, `cd ${resultDir} && git add -A && git diff --cached --binary $(git rev-list --max-parents=0 HEAD)`);
 	writeFileSync(join(runDir, "result.patch.gz"), gzipSync(patch.stdout));
+	// Safety flags (GATE.md, amendment 1): any flag on a candidate's run blocks its release. The run's own key is checked
+	// for, and never written anywhere: a flag carries only a masked sign of it.
+	record.safetyFlags = detectFlags({ stdout: run.stdout, stderr: run.stderr, patch: patch.stdout, secrets: [key], repoFiles: countFiles(join(taskDir, "repo")) });
 	await sh(work, `tar -czf /home/user/result.tgz --exclude=.git --exclude=node_modules -C ${resultDir} .`);
 	resultTar = Buffer.from(await work.files.read("/home/user/result.tgz", { format: "bytes" }));
 	record.resultSha256 = sha(resultTar);

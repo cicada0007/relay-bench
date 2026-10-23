@@ -14,10 +14,11 @@
 // <out>/<test>.tasks.json on the first real run, and a resumed stage reads it back, so it never changes mid-stage.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { armFor, armRuns, providerOf } from "./arms.mjs";
-import { sampleIds, sealedProblems, selectTasks } from "./stage-tasks.mjs";
+import { budgetProblems, exposurePathFor, loadBudget, readExposures, recordExposure, SEALED } from "./exposure.mjs";
+import { readTasks, sampleIds, sealedProblems, selectTasks } from "./stage-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -44,7 +45,8 @@ const counted = !/^(pilot|dev)/.test(args.test);
 
 /** E2B, 2 vCPU + 4 GiB, checked 15 Oct 2026 at e2b.dev/pricing: $0.000046 per second. */
 const E2B_USD_PER_SECOND = 0.000046;
-const out = join(ROOT, args.out);
+// Relative to this repository, or absolute: the exam's runs live outside it.
+const out = resolve(ROOT, args.out);
 const recordsPath = join(out, "records.jsonl");
 const tools = args.tools.split(",");
 // Every tool must run this model's provider; otherwise each of its runs would fail as if our infrastructure had.
@@ -104,6 +106,32 @@ for (let rep = 1; rep <= Number(args.reps); rep++)
 
 const done = new Set(records().map(recordKey));
 const pending = jobs.filter((j) => !done.has(runKey(j)));
+
+// The leak budget (runner/exposure.mjs): every run of an exam or check task shows it to a tool, so each is counted
+// beside the exam before it starts, and a stage that would pass any task's budget runs nothing.
+const tierOf = new Map([...readTasks(args["tasks-dir"])].map(([id, t]) => [id, t.tier]));
+const exposurePath = exposurePathFor(args["tasks-dir"]);
+const budget = loadBudget(args["tasks-dir"]);
+const isSealedJob = (j) => SEALED.includes(tierOf.get(j.task));
+const exposureOf = (j) => ({ kind: "run", tier: tierOf.get(j.task), tasks: [j.task], test: args.test, tool: j.tool, by: "run-stage" });
+{
+	const problems = budgetProblems({ entries: readExposures(exposurePath), add: pending.filter(isSealedJob).map(exposureOf), budget });
+	if (problems.length) {
+		for (const p of problems.slice(0, 20)) console.error(p);
+		throw new Error(`test ${args.test} would pass the leak budget of ${problems.length} exposure(s); nothing was run`);
+	}
+}
+/** Counts one attempt at a sealed task, or refuses it when its budget is spent (a retry can need one more). */
+function expose(job) {
+	if (!isSealedJob(job)) return true;
+	const problems = budgetProblems({ entries: readExposures(exposurePath), add: [exposureOf(job)], budget });
+	if (problems.length) {
+		appendFileSync(join(out, "infra-failures.log"), `${new Date().toISOString()} ${runKey(job)} not run: ${problems[0]}\n\n`);
+		return false;
+	}
+	recordExposure(exposurePath, exposureOf(job));
+	return true;
+}
 const stageSpent = () => records().filter((r) => r.test === args.test).reduce((s, r) => s + (r.usage?.costUsd ?? 0), 0);
 const e2bSpent = () =>
 	records().reduce((s, r) => s + ((Date.parse(r.finishedAt) - Date.parse(r.startedAt)) / 1000) * E2B_USD_PER_SECOND, 0);
@@ -156,9 +184,10 @@ const workers = Array.from({ length: Number(args.concurrency) }, async () => {
 			break;
 		}
 		const job = queue.shift();
+		if (!expose(job)) continue;
 		inFlight++;
 		let result = await runOne(job);
-		if (!records().some((r) => recordKey(r) === runKey(job))) {
+		if (!records().some((r) => recordKey(r) === runKey(job)) && expose(job)) {
 			appendFileSync(join(out, "infra-failures.log"), `${new Date().toISOString()} ${runKey(job)} attempt 1\n${result.text.slice(-1500)}\n\n`);
 			result = await runOne(job);
 			if (!records().some((r) => recordKey(r) === runKey(job))) {

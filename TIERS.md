@@ -26,6 +26,10 @@ the exam lets a founder sign a release.
   keeps measuring work the models have not seen.
 - **Overfitting alarm.** When Practice scores rise and Exam scores do not, the improvement loop is learning the
   practice tasks rather than getting better.
+- **Counted.** Every run of an exam or check task, and every result read that depends on one, is counted against a
+  leak budget kept beside the exam (GATE.md, amendment 1). A task past its budget is spent and replaced.
+- **Anchored.** A fixed, versioned set of exam tasks is scored with every release, so the quarter's trend is read on the
+  same tasks while the rest of the exam changes (GATE.md, amendment 1).
 
 ## Growing the exam
 
