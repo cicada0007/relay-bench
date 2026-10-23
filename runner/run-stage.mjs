@@ -21,6 +21,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { armFor, armRuns, providerOf } from "./arms.mjs";
 import { budgetProblems, exposurePathFor, loadBudget, readExposures, recordExposure, SEALED } from "./exposure.mjs";
+import { unpricedProblems } from "./meter-price.mjs";
 import { readTasks, sampleIds, sealedProblems, selectTasks } from "./stage-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -58,6 +59,16 @@ for (const tool of tools) {
 	const resolved = armFor(tool);
 	if (!resolved) throw new Error(`unknown tool ${tool}`);
 	if (!armRuns(resolved.arm, args.model)) throw new Error(`${tool} does not run ${providerOf(args.model)} models such as ${args.model}; nothing was run`);
+}
+// A model arm (model watch) runs its own model: of the stage's provider, since a run gets one key, and priced by the
+// meter, since the meter is every run's spend cap and counts an unpriced model as free.
+{
+	const overrides = tools.map((tool) => armFor(tool).override?.model).filter(Boolean);
+	for (const model of overrides) {
+		if (providerOf(model) !== providerOf(args.model)) throw new Error(`a model arm's ${model} is not an ${providerOf(args.model)} model like ${args.model}; nothing was run`);
+	}
+	const problems = overrides.length ? unpricedProblems([...new Set([args.model, ...overrides])]) : [];
+	if (problems.length) throw new Error(`${problems.join("; ")}; nothing was run`);
 }
 // An unreleased build is pre-screened only, never counted (GATE.md, "Released versions only, for a counted gate").
 if (tools.includes("relay@pkg") && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package <tgz>; nothing was run");

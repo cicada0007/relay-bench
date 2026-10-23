@@ -54,14 +54,15 @@ export const ARMS = {
 		providers: ["anthropic", "openai"],
 		/** Relay through its queue, one model on every tier, from the model's own provider: on an OpenAI model (the Codex
 		 *  comparison) it is Relay's "openai" provider, which reads OPENAI_API_KEY and calls api.openai.com, where the
-		 *  meter answers. */
-		files: ({ model }) => {
+		 *  meter answers. A model arm (model watch) puts its own model on its tier, or on every tier. */
+		files: ({ model, override }) => {
 			const provider = providerOf(model);
+			const on = (tier) => `${provider}/${override && (override.tier === "all" || override.tier === tier) ? override.model : model}`;
 			return {
 				"/home/user/.relay/agent/settings.json": JSON.stringify({
 					defaultProvider: provider,
-					defaultModel: model,
-					models: { tiers: { decider: `${provider}/${model}`, strong: `${provider}/${model}`, fast: `${provider}/${model}` } },
+					defaultModel: override?.tier === "all" ? override.model : model,
+					models: { tiers: { decider: on("decider"), strong: on("strong"), fast: on("fast") } },
 				}),
 			};
 		},
@@ -152,10 +153,32 @@ export const armRuns = (arm, model) => (arm.providers ?? ["anthropic"]).includes
 /** A released Relay version, as the installer's RELAY_VERSION takes it: 0.6.121, or a beta such as 0.6.122-beta.3. */
 export const RELAY_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
+/** The tiers a model arm can put its model on: one of Relay's three, or all of them. */
+export const MODEL_ARM_TIERS = Object.freeze(["all", "decider", "strong", "fast"]);
+const MODEL_ARM = /^(\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?)\+(all|decider|strong|fast)\+([a-z0-9][a-z0-9.-]*)$/;
+
+/**
+ * A model arm's spec, `<version>+<tier>+<model>` (model watch): a released Relay with a new model on one tier or on
+ * every tier, such as `0.6.121+all+claude-sonnet-6`. Only the characters a release id may have (runner/pins.mjs).
+ * Null when `spec` is not one.
+ */
+export function parseModelArm(spec) {
+	const m = MODEL_ARM.exec(spec ?? "");
+	return m ? { version: m[1], tier: m[2], model: m[3] } : null;
+}
+
+/** The spec of a model arm, checked: `modelArm("0.6.121", "all", "claude-sonnet-6")`. */
+export function modelArm(version, tier, model) {
+	const spec = `${version}+${tier}+${model}`;
+	if (!parseModelArm(spec)) throw new Error(`not a model arm: Relay ${version} with ${model} on ${tier}`);
+	return spec;
+}
+
 /**
  * The arm for a tool name. `relay@<version>` is Relay at that released version, installed for the run (GATE.md); the
- * gate compares two of them. `relay@pkg` is Relay from --relay-package, for pre-screens only. Every other name is an
- * arm of ARMS as it is.
+ * gate compares two of them. `relay@<version>+<tier>+<model>` is the same Relay with another model on that tier (model
+ * watch), and `override` says which. `relay@pkg` is Relay from --relay-package, for pre-screens only. Every other name
+ * is an arm of ARMS as it is.
  */
 export function armFor(tool) {
 	const at = tool.indexOf("@");
@@ -167,6 +190,11 @@ export function armFor(tool) {
 	const spec = tool.slice(at + 1);
 	if (base !== "relay") return null;
 	if (spec === "pkg") return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true };
+	const modelArmSpec = parseModelArm(spec);
+	if (modelArmSpec) {
+		const { version, tier, model } = modelArmSpec;
+		return { arm: ARMS.relay, base, relayVersion: version, relayPackage: false, override: { tier, model } };
+	}
 	if (!RELAY_VERSION_PATTERN.test(spec)) return null;
 	return { arm: ARMS.relay, base, relayVersion: spec, relayPackage: false };
 }

@@ -22,6 +22,7 @@ import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
 import { ARMS, armFor, armRuns, providerOf, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
+import { unpricedProblems } from "./meter-price.mjs";
 import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
 import { detectFlags } from "./safety.mjs";
 
@@ -54,6 +55,13 @@ if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new
 if (args["relay-package"] && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only");
 const provider = providerOf(args.model);
 if (!armRuns(arm, args.model)) throw new Error(`${args.tool} does not run ${provider} models such as ${args.model}`);
+// A model arm (model watch): its model gets the run's one key, so it is of the same provider, and the meter must price
+// it, or the run's spend cap would not bind.
+if (resolved.override) {
+	if (providerOf(resolved.override.model) !== provider) throw new Error(`${args.tool} runs ${resolved.override.model}, not an ${provider} model like ${args.model}`);
+	const unpriced = unpricedProblems([resolved.override.model]);
+	if (unpriced.length) throw new Error(unpriced[0]);
+}
 const KEY_ENV = { anthropic: "RELAY_BENCH_ANTHROPIC_KEY", openai: "RELAY_BENCH_OPENAI_KEY" };
 const key = process.env[KEY_ENV[provider]];
 if (!key) throw new Error(`${KEY_ENV[provider]} is not set`);
@@ -90,6 +98,8 @@ const record = {
 	tool: args.tool,
 	model: args.model,
 	provider,
+	// Model watch: the model this arm put on its tier, or on every tier.
+	...(resolved.override ? { override: resolved.override } : {}),
 	rep: Number(args.rep),
 	capUsd: Number(args["cap-usd"]),
 	limitMinutes: task.timeLimitMinutes,
@@ -179,7 +189,7 @@ try {
 			"git config --global init.defaultBranch main && git init -q && git add -A && git commit -q -m start",
 	);
 	if (setup.exitCode !== 0) throw new Error(`setup failed: ${setup.stderr.slice(-400)}`);
-	for (const [path, content] of Object.entries(arm.files({ model: args.model }))) await work.files.write(path, content);
+	for (const [path, content] of Object.entries(arm.files({ model: args.model, override: resolved.override }))) await work.files.write(path, content);
 	if (args["relay-package"]) {
 		const pkg = readFileSync(args["relay-package"]);
 		record.relayPackageSha256 = sha(pkg);

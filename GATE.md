@@ -223,3 +223,27 @@ window the gains and their variances add:
   over the releases on the last anchor version (at least three).
 
 The trend reports the anchor versions it spans and any chain restarts, so a reader can see what was added up.
+
+### 3. Model watch (23 October 2026, before any model gate)
+
+A new model in Relay's catalogue is examined before Relay's routing uses it (relay-harness D-93). This amendment lets
+the two arms of a gate differ in their model instead of their release. Nothing else changes: the tasks, the anchors,
+the looks and their boundaries, the verdict rules and their order (the cost, time and false "done" limits included),
+the leak budget, the pinned graders and the exit codes are this file's.
+
+**In plain words**
+
+- **The arms.** The champion is a released Relay on its own model: the ledger's last release and the model its entry
+  names. The candidate is the same release with the new model on every tier, the way the benchmark runs Relay, or on
+  one tier: `relay@0.6.121+all+claude-sonnet-6`, `relay@0.6.121+strong+claude-sonnet-6`. Both arms get the same key,
+  so the new model is of the champion model's provider.
+- **The meter holds both.** A run on a model the meter has no price for is refused before it starts, by
+  `scripts/model-watch.mjs`, `runner/run-stage.mjs` and `runner/run-one.mjs` alike: the meter is every run's spend
+  cap, and it counts a model it cannot price as free.
+- **A model is not a release.** A model gate never goes in the ledger (`scripts/ledger.mjs` refuses it) and signs
+  nothing. Its verdict is written as a small file, hashed as the ledger hashes an entry (SHA-256 of canonical JSON
+  without its own hash), which Relay reads: a PASS on the exam lets routing use the model, and nothing else does. The
+  hash shows a file was not changed after it was written; it does not show who wrote it.
+- **A dearer model can block.** "Costs more" still blocks at the last look: a new model that is better but costs more
+  than 5% over the champion's spend is not routed to by itself. A person who wants it sets it in Relay's settings.
+

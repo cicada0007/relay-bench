@@ -41,11 +41,14 @@ const PUBLIC_PREFIX = "terminal-bench/";
 
 export const isPublicTask = (id) => typeof id === "string" && id.startsWith(PUBLIC_PREFIX);
 
-/** True when the record is a run of Relay (any released version, or the round's `relay`), not a pre-screen build. */
+/**
+ * True when the record is a run of Relay (any released version, or the round's `relay`), not a pre-screen build, and
+ * not a model watch arm, whose failures belong to the model it tried, not to Relay.
+ */
 export function isRelay(tool, only = null) {
 	if (only) return tool === only;
 	const resolved = armFor(tool);
-	return resolved?.base === "relay" && !resolved.relayPackage;
+	return resolved?.base === "relay" && !resolved.relayPackage && !resolved.override;
 }
 
 /** The run's share of requirements met, or null when our infrastructure lost it (no grade). */
