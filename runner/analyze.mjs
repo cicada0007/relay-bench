@@ -115,7 +115,7 @@ export function loadRecords(out, test) {
 		}
 		for (const r of records) {
 			const g = latest.get(r.runId);
-			if (g) Object.assign(r, { judge: g.judge, score: g.score, saidDoneButFailed: g.saidDoneButFailed, rejudgedAt: g.rejudgedAt });
+			if (g) Object.assign(r, { judge: g.judge, score: g.score, saidDoneButFailed: g.saidDoneButFailed, rejudgedAt: g.rejudgedAt, judgeTreeHash: g.judgeTreeHash });
 		}
 	}
 	return records;

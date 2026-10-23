@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { loadRecords } from "../runner/analyze.mjs";
 import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
+import { loadPin, pinFingerprint, pinPathFor, pinProblems } from "../runner/pins.mjs";
 import { gate } from "../runner/gate-analyze.mjs";
 import { flagSummary } from "../runner/safety.mjs";
 import { tInv } from "../runner/sequential.mjs";
@@ -70,19 +71,19 @@ export function signerProblems(signers) {
 
 /**
  * The deciding look again, from the records, with the gate's own code. `state` is the gate's looks.json; `anchors`
- * the anchor set { version, fingerprint, ids }. Throws when the gate has not decided or its look is not reproducible.
+ * the anchor set { version, fingerprint, ids }; `pinned` the release's pinned graders (runner/pins.mjs). Throws when the
+ * gate has not decided or its look is not reproducible.
  */
-export function regate({ state, records, anchors }) {
+export function regate({ state, records, anchors, pinned = null }) {
 	if (!state?.decided) throw new Error("this gate has not decided; only a gate that stopped with PASS goes in the ledger");
 	const look = state.looks.find((l) => l.index === state.decided.look);
 	if (!look?.taskSet) throw new Error(`look ${state.decided.look} does not list its tasks, so it cannot be read again`);
 	const tasks = new Set(look.taskSet);
 	const history = state.looks.filter((l) => l.index < look.index).map((l) => l.fraction);
 	const combined = state.combined ? { release: state.candidate.split("@")[1], lanes: state.combined } : null;
-	return gate(
-		records.filter((r) => tasks.has(r.task)),
-		{ champion: state.champion, candidate: state.candidate, design: state.design, history, anchors, combined },
-	);
+	const used = records.filter((r) => tasks.has(r.task));
+	const pin = pinned ? { release: pinned.release, fingerprint: pinFingerprint(pinned), problems: pinProblems(used, pinned) } : null;
+	return gate(used, { champion: state.champion, candidate: state.candidate, design: state.design, history, anchors, combined, pin });
 }
 
 /** Why this gate cannot go in the ledger; empty when it can. */
@@ -139,6 +140,7 @@ export function entryFor({ state, result, records, signers, chainStart = false, 
 		falseDone: { champion: round(result.falseDone.champion), candidate: round(result.falseDone.candidate) },
 		safety: { candidate: result.safety.candidate.counts, champion: result.safety.champion.counts },
 		lanes: result.combined?.lanes ?? null,
+		graders: result.pin?.fingerprint ?? null,
 		signers,
 		signedAt: now.toISOString(),
 		records: sha256(canonical(used.map((r) => [r.runId ?? null, r.task, r.tool, r.rep ?? null, r.score.share]).sort((x, y) => canonical(x).localeCompare(canonical(y))))),
@@ -283,8 +285,11 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			const set = loadAnchors(resolve(values.anchors));
 			if (state.anchors?.fingerprint !== set.fingerprint) problems.push(`the gate scored anchors ${state.anchors?.version ?? "none"}, not ${set.version}`);
 			problems.push(...anchorProblems(set.manifest, resolve(values["tasks-dir"])).map((p) => `anchor ${p}`));
+			const pinPath = pinPathFor(resolve(values["tasks-dir"]), state.candidate.split("@")[1]);
+			const pinned = existsSync(pinPath) ? loadPin(pinPath) : null;
+			if (!pinned) problems.push(`no graders are pinned for ${state.candidate.split("@")[1]} (${pinPath})`);
 			try {
-				result = regate({ state, records, anchors: { version: set.version, fingerprint: set.fingerprint, ids: set.ids } });
+				result = regate({ state, records, anchors: { version: set.version, fingerprint: set.fingerprint, ids: set.ids }, pinned });
 			} catch (error) {
 				problems.push(error.message);
 			}

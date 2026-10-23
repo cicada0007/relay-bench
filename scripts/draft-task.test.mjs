@@ -126,6 +126,7 @@ test("a Node pull request becomes a task whose judge fails the starting reposito
 		assert.equal(result.dir, dir);
 		const task = JSON.parse(readFileSync(join(dir, "task.json"), "utf8"));
 		assert.equal(task.tier, "exam");
+		assert.equal(task.level, 1);
 		assert.equal(task.kind, "everyday");
 		assert.equal(task.draftedBy, "openai/gpt-test-2026-10-01");
 		assert.equal(task.source.issue, "https://github.com/example/tiny/issues/3");

@@ -194,7 +194,7 @@ better every week and prove it.
 - `ledger/ledger.json` holds one entry for every release that passed the gate on the exam, in order. An entry records
   the release and its champion, the date, the model, the gate's result and design, the gain on the exam and on the
   anchors with their intervals, the cost and time ratios, false "done", the safety flag counts, any combined lane
-  changes, and who signed it. It holds numbers only: no task names (the anchor set appears by its fingerprint) and no
+  changes, the fingerprint of the release's pinned graders, and who signed it. It holds numbers only: no task names (the anchor set appears by its fingerprint) and no
   words for results.
 - `node scripts/ledger.mjs write` never trusts a verdict file. It reads the gate's kept looks and the run records, and
   computes the deciding look again with the gate's own code. It writes only when that gives the same PASS. So the
