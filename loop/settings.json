@@ -1,0 +1,69 @@
+{
+	"version": 1,
+	"lanes": {
+		"config": {
+			"enabled": true,
+			"budgetUsd": 6,
+			"proposals": 1
+		},
+		"routing": {
+			"enabled": true,
+			"budgetUsd": 6,
+			"proposals": 1
+		},
+		"memory": {
+			"enabled": true,
+			"budgetUsd": 6,
+			"proposals": 1
+		},
+		"tools": {
+			"enabled": true,
+			"budgetUsd": 6,
+			"proposals": 1
+		},
+		"prompts": {
+			"enabled": true,
+			"budgetUsd": 8,
+			"proposals": 1
+		},
+		"architecture": {
+			"enabled": true,
+			"budgetUsd": 6,
+			"proposals": 1
+		},
+		"exam": {
+			"enabled": true,
+			"budgetUsd": 0,
+			"proposals": 2
+		},
+		"runtime": {
+			"enabled": false,
+			"budgetUsd": 0,
+			"proposals": 0
+		}
+	},
+	"clusters": {
+		"minRuns": 3,
+		"minTasks": 2
+	},
+	"routing": {
+		"minSamples": 5,
+		"gapPoints": 15
+	},
+	"prescreen": {
+		"devTasks": "kind:everyday",
+		"devReps": 1,
+		"selectionReps": 1,
+		"capUsdPerRun": 0.25,
+		"e2bCapUsd": 10,
+		"concurrency": 4,
+		"maxSelectionQueries": 4
+	},
+	"meta": {
+		"windowCycles": 8,
+		"minCycles": 4,
+		"minSpendUsd": 2,
+		"shift": 0.25
+	},
+	"approved": null
+}

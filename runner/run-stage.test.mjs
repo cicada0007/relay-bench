@@ -39,3 +39,23 @@ test("a stage within the leak budget plans its runs; one past it runs nothing an
 	assert.match(refused.stderr, /x1 would be shown to 6 runs; its budget is 5/);
 	assert.match(refused.stderr, /nothing was run/);
 });
+
+test("an unreleased build runs only as relay@pkg, with its package, in a dev or pilot test", () => {
+	const root = mkdtempSync(join(tmpdir(), "stage-pkg-"));
+	const tasks = join(root, "tasks");
+	mkdirSync(join(tasks, "p1"), { recursive: true });
+	writeFileSync(join(tasks, "p1", "task.json"), JSON.stringify({ id: "p1", kind: "everyday" }));
+	const pkg = join(root, "relay.tgz");
+	writeFileSync(pkg, "not really a package");
+	const run = (test, extra) =>
+		spawnSync(process.execPath, [STAGE, "--test", test, "--model", "claude-haiku-5-5", "--tools", "relay@0.6.121,relay@pkg", "--tasks", "p1", "--tasks-dir", tasks, "--reps", "1", "--cap-usd", "0.2", "--stage-cap-usd", "1", "--out", join(root, "runs"), "--dry-run", ...extra], { encoding: "utf8" });
+	const missing = run("dev-loop-x", []);
+	assert.notEqual(missing.status, 0);
+	assert.match(missing.stderr, /relay@pkg needs --relay-package/);
+	const counted = run("loop-x", ["--relay-package", pkg]);
+	assert.notEqual(counted.status, 0);
+	assert.match(counted.stderr, /for dev and pilot tests only/);
+	const ok = run("dev-loop-x", ["--relay-package", pkg]);
+	assert.equal(ok.status, 0, ok.stderr);
+	assert.match(ok.stdout, /2 runs planned/);
+});
