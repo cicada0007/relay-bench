@@ -4,7 +4,8 @@
 //   meta        judge the loop's own settings by gated gain per dollar over the last cycles (free; proposes only)
 //   analyze     failure clusters from practice and public runs and Relay's queue reports (free)
 //   propose     changes, one lane each, checked against their lane and the invariants: the rules lanes free, the
-//               writer lanes (prompts and skills, tools) PAID, one model call each
+//               writer lanes (prompts and skills, tools) PAID, one model call each, and taught skills (--teaching,
+//               the skill candidates teaching/graduate.mjs wrote; TEACHING.md) free, in the prompts and skills lane
 //   exam        kinds of task the exam should mine more of, into the exam's approval queue (free; never approved)
 //   prescreen   PAID: each proposal's build against the champion on the dev set (practice), then the selection set
 //               (the check tier's one word), within each lane's fixed budget and the command's --spend-cap
@@ -13,7 +14,7 @@
 //
 //   node loop/cycle.mjs --records runs/round-1/records.jsonl [--records runs/round-1/F/records.jsonl] \
 //     --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 \
-//     [--exam ../relay-exam] [--spend-cap 20 | --dry-run] [--cycle 2026-W43] [--out runs/loop]
+//     [--exam ../relay-exam] [--teaching runs/teaching] [--spend-cap 20 | --dry-run] [--cycle 2026-W43] [--out runs/loop]
 //
 // Without --spend-cap it stops before the first paid step and says what waits and the most it could cost (exit 3).
 // --dry-run writes nothing and spends nothing. A cycle run again resumes: its analysis and proposals are fixed at its
@@ -31,7 +32,8 @@ import { LANE_ORDER, LANES } from "./lanes.mjs";
 import { judgeMeta, loadSettings, metaProposals, PAID_LANES, readCycles, SETTINGS_PATH, settingsHash } from "./meta.mjs";
 import { describeChange, packageRelease } from "./package.mjs";
 import { prescreen, prescreenPlan, wallet } from "./prescreen.mjs";
-import { examProposalProblems, examProposals, ruleCandidates, selectProposals, writeProposal, writerInput, writerTargets } from "./propose.mjs";
+import { readCandidates } from "../teaching/graduate.mjs";
+import { examProposalProblems, examProposals, ruleCandidates, selectProposals, teachingProposals, writeProposal, writerInput, writerTargets } from "./propose.mjs";
 import { anthropicWriter, DEFAULT_WRITER_MODEL, writerProblems } from "./writer.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -87,6 +89,7 @@ export async function runCycle({
 	champion = null,
 	model = "claude-haiku-5-5",
 	exam = null,
+	teaching = null,
 	packages = null,
 	ledgerPath = undefined,
 	spendCap = null,
@@ -181,11 +184,13 @@ export async function runCycle({
 	else {
 		if (!state.proposals) {
 			const { candidates, notes } = ruleCandidates({ cycle, analysis: a, arch, archText, settings, sources });
-			const selected = selectProposals(candidates, { settings, arch, sources });
+			// Taught skills: free, in the prompts and skills lane, gated like any other proposal (TEACHING.md).
+			const taught = teaching ? teachingProposals({ cycle, ...readCandidates(resolve(teaching)), arch, clusters: a.clusters, settings }) : { candidates: [], refused: [], notes: [] };
+			const selected = selectProposals([...candidates, ...taught.candidates], { settings, arch, sources });
 			state.proposals = selected.proposals.map(keep);
-			state.refused = selected.refused;
+			state.refused = [...taught.refused, ...selected.refused];
 			state.held = selected.held;
-			state.notes = notes;
+			state.notes = [...notes, ...taught.notes];
 			state.written = [];
 		}
 		// Writer lanes: one paid call per target, while its worst case fits.
@@ -357,7 +362,7 @@ export function cycleReport({ cycle, steps, state, settings, approval, money, sp
 		if (!state.proposals.length) L.push("None.");
 		for (const p of state.proposals) {
 			const r = state.prescreen?.results?.[p.id];
-			L.push(`- **${p.id}** (${LANES[p.lane].label}, risk ${p.risk}): ${describeChange(p)}. ${p.words}. Evidence: ${p.evidence?.runs ?? "–"} runs on ${p.evidence?.tasks ?? "–"} tasks.${r ? ` Pre-screen: ${r.status}${r.dev ? `, dev ${r.dev.difference?.toFixed(1) ?? "–"} points (${r.dev.low?.toFixed(1) ?? "–"} to ${r.dev.high?.toFixed(1) ?? "–"}) over ${r.dev.tasks} tasks` : ""}${r.selection ? `, selection ${r.selection.status}` : ""}${r.why?.length ? `; ${r.why.join("; ")}` : ""}.` : ""}`);
+			L.push(`- **${p.id}** (${LANES[p.lane].label}, risk ${p.risk}): ${describeChange(p)}. ${p.words}. Evidence: ${p.change?.kind === "skill" ? `${p.evidence?.machines ?? "–"} machines, ${p.evidence?.passes ?? "–"} passing uses there` : `${p.evidence?.runs ?? "–"} runs on ${p.evidence?.tasks ?? "–"} tasks`}.${r ? ` Pre-screen: ${r.status}${r.dev ? `, dev ${r.dev.difference?.toFixed(1) ?? "–"} points (${r.dev.low?.toFixed(1) ?? "–"} to ${r.dev.high?.toFixed(1) ?? "–"}) over ${r.dev.tasks} tasks` : ""}${r.selection ? `, selection ${r.selection.status}` : ""}${r.why?.length ? `; ${r.why.join("; ")}` : ""}.` : ""}`);
 		}
 		if (state.refused?.length) {
 			L.push("", "Refused:", "");
@@ -405,6 +410,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			champion: { type: "string" },
 			model: { type: "string", default: "claude-haiku-5-5" },
 			exam: { type: "string" },
+			teaching: { type: "string" },
 			packages: { type: "string" },
 			ledger: { type: "string" },
 			"spend-cap": { type: "string" },
@@ -428,6 +434,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		champion: values.champion ?? null,
 		model: values.model,
 		exam: values.exam ? resolve(values.exam) : null,
+		teaching: values.teaching ? resolve(values.teaching) : null,
 		packages: values.packages ? resolve(values.packages) : null,
 		ledgerPath: values.ledger ? resolve(values.ledger) : undefined,
 		spendCap,

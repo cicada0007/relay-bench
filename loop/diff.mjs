@@ -197,3 +197,38 @@ export function globToRegExp(glob) {
 	}
 	return new RegExp(`^${re}$`);
 }
+
+/** A diff that adds `text` as the new file `path`, in git's format, so `git apply` creates it. */
+export function newFileDiff(text, path) {
+	const { lines, eol } = splitLines(text);
+	if (!lines.length) return `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n`;
+	const out = [`diff --git a/${path} b/${path}`, "new file mode 100644", "--- /dev/null", `+++ b/${path}`, `@@ -0,0 +1,${lines.length} @@`];
+	for (const line of lines) out.push(`+${line}`);
+	if (!eol) out.push("\\ No newline at end of file");
+	return `${out.join("\n")}\n`;
+}
+
+/** The part of a patch for one file: from its "diff --git" line to the next. Empty when the patch does not touch it. */
+export function filePart(patch, file) {
+	for (const chunk of String(patch ?? "").split(/^(?=diff --git )/m)) {
+		const m = /^diff --git a\/(.+?) b\/(.+)$/m.exec(chunk);
+		if (m && (m[1] === file || m[2] === file)) return chunk;
+	}
+	return "";
+}
+
+/** True when the patch adds `file` as a new file (git's "new file mode", or "--- /dev/null"). */
+export const addsNewFile = (patch, file) => /^(?:new file mode \d+|--- \/dev\/null)$/m.test(filePart(patch, file));
+
+/** The text a new-file part of a patch creates. */
+export function newFileText(part) {
+	const lines = [];
+	let noEol = false;
+	let inHunk = false;
+	for (const line of String(part ?? "").split("\n")) {
+		if (line.startsWith("@@ ")) inHunk = true;
+		else if (inHunk && line.startsWith("+")) lines.push(line.slice(1));
+		else if (inHunk && line.startsWith("\\ No newline")) noEol = true;
+	}
+	return lines.length ? `${lines.join("\n")}${noEol ? "" : "\n"}` : "";
+}

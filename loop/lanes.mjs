@@ -9,7 +9,8 @@
 // Every check here is computed from the change itself (the JSON paths it changes in relay.arch, the files its patch
 // touches), never from what the proposal says about itself.
 import { patchPaths } from "../runner/safety.mjs";
-import { getPath, globToRegExp, hunkRanges, under } from "./diff.mjs";
+import { skillNameProblems } from "../teaching/graduate.mjs";
+import { addsNewFile, getPath, globToRegExp, hunkRanges, under } from "./diff.mjs";
 
 /** The lanes, in the order a cycle runs them and a release lists them. */
 export const LANE_ORDER = Object.freeze(["config", "routing", "memory", "tools", "prompts", "architecture", "exam", "runtime"]);
@@ -52,7 +53,7 @@ export const LANES = Object.freeze({
 	prompts: {
 		label: "prompts and skills",
 		how: "writer",
-		words: "the prompts Relay sends and the skills it ships",
+		words: "the prompts Relay sends and the skills it ships, and a new skill taught from lessons machines shared (TEACHING.md)",
 		decisions: ["D-47", "D-74", "D-75"],
 		arch: ["prompts", "skills"],
 		prompt: (id) => !id.startsWith("tool."),
@@ -151,13 +152,13 @@ export const INVARIANTS = Object.freeze([
 		id: "gate",
 		words: "the gate's rules and the human signature: GATE.md, TIERS.md, the pre-registration, the gate's code, the check tier's door, the ledger, and this loop's own rules",
 		arch: [],
-		files: ["GATE.md", "TIERS.md", "PREREGISTRATION.md", "runner/gate*.mjs", "runner/sequential.mjs", "runner/interval.mjs", "runner/safety.mjs", "runner/exposure.mjs", "runner/anchors.mjs", "runner/stage-tasks.mjs", "scripts/ledger.mjs", "scripts/check-query.mjs", "ledger/**", "loop/**"],
+		files: ["GATE.md", "TIERS.md", "PREREGISTRATION.md", "TEACHING.md", "runner/gate*.mjs", "runner/sequential.mjs", "runner/interval.mjs", "runner/safety.mjs", "runner/exposure.mjs", "runner/anchors.mjs", "runner/stage-tasks.mjs", "scripts/ledger.mjs", "scripts/check-query.mjs", "ledger/**", "loop/**", "teaching/**"],
 	},
 	{
 		id: "tenant-data",
-		words: "tenant data: what leaves a machine, only with opt-in (D-72)",
+		words: "tenant data: what leaves a machine, only with opt-in (D-72, D-94)",
 		arch: [],
-		files: ["**/core/counts/**", "**/telemetry*", "**/agent-traces*", "**/relay-account/**"],
+		files: ["**/core/counts/**", "**/telemetry*", "**/agent-traces*", "**/relay-account/**", "**/core/teaching/**"],
 	},
 ]);
 
@@ -232,7 +233,14 @@ export function proposalProblems(proposal, { arch = null, sources = {} } = {}) {
 			continue;
 		}
 		if (!scope.has(f)) {
-			problems.push(`${f} is outside the ${proposal.lane} lane`);
+			const fresh = def.skills ? newSkillProblems(f, proposal.patch, arch) : null;
+			if (fresh === null) problems.push(`${f} is outside the ${proposal.lane} lane`);
+			else problems.push(...fresh);
+			continue;
+		}
+		if (addsNewFile(proposal.patch, f)) {
+			const skill = (arch?.skills ?? []).find((sk) => `${sk.dir}/SKILL.md` === f);
+			problems.push(skill ? `a skill named ${skill.name} ships already` : `${f} exists at the champion, so a change to it is an edit, not a new file`);
 			continue;
 		}
 		const symbols = scope.get(f);
@@ -255,6 +263,29 @@ export function proposalProblems(proposal, { arch = null, sources = {} } = {}) {
 	}
 	problems.push(...ceilingProblems(arch, proposal.after));
 	return [...new Set(problems)];
+}
+
+/** The folder Relay's shipped skills sit in, from relay.arch's skills (`packages/coding-agent/skills`), or null. */
+export function skillsRoot(arch) {
+	const parents = [...new Set((arch?.skills ?? []).map((s) => String(s.dir).split("/").slice(0, -1).join("/")))];
+	return parents.length === 1 && parents[0] ? parents[0] : null;
+}
+
+/**
+ * A new skill in the prompts and skills lane (a taught skill, TEACHING.md): `<skills folder>/<name>/SKILL.md` added
+ * whole as a new file, with a name the harness loads and that no shipped skill has. Returns the problems, empty when
+ * it is such a file, or null when `file` is not a skill's SKILL.md at all. Words only: no other file of a new skill.
+ */
+export function newSkillProblems(file, patch, arch) {
+	const root = skillsRoot(arch);
+	if (!root || !file.startsWith(`${root}/`)) return null;
+	const rest = file.slice(root.length + 1).split("/");
+	if (rest.length !== 2 || rest[1] !== "SKILL.md") return null;
+	const problems = [];
+	if (!addsNewFile(patch, file)) problems.push(`${file} is not a shipped skill, so it can only be added whole, as a new file`);
+	if ((arch?.skills ?? []).some((s) => s.name === rest[0])) problems.push(`a skill named ${rest[0]} ships already`);
+	problems.push(...skillNameProblems(rest[0]).map((p) => `the new skill ${rest[0]} needs ${p}`));
+	return problems;
 }
 
 /** The old-side line numbers a patch removes from a file, and for a pure insertion the line it follows. */

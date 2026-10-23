@@ -337,7 +337,7 @@ The lanes, each with a fixed budget per cycle in `loop/settings.json` (estimates
 | routing | relay.arch `routing`: the tiers' models, the suitability table, the Decider's share (D-46, D-60, D-61) | the loop's rules | $6 |
 | memory | relay.arch `memory.autoRefine`, the learning mode (D-90), from the learning ablation's two arms | the loop's rules | $6 |
 | tools | the text of a `tool.*` prompt (the tools as the model sees them) | a model writes it | $6 |
-| prompts and skills | the text of one prompt relay.arch lists, or a skill's SKILL.md | a model writes it | $8 |
+| prompts and skills | the text of one prompt relay.arch lists, or a skill's SKILL.md; or a new skill taught from shared lessons (`--teaching`) | a model writes it; a taught skill is free | $8 |
 | architecture | relay.arch `subAgents` and `topology` (D-91) | the loop's rules | $6 |
 | exam proposals | nothing in Relay: kinds of task to mine, for a person to approve or drop | free | $0 |
 | runtime | later: the E2B sandbox a task runs in (D-89); documented only | | $0 |
@@ -365,6 +365,20 @@ make; `scripts/ledger.mjs write` still writes it only after that gate stops with
 The meta loop: `node loop/meta.mjs judge` prints each lane's spend, gated gain and gain per dollar, and its proposals
 (also in `runs/loop/<week>/meta/`). A person applies one with `node loop/meta.mjs approve --by <name> --proposal
 runs/loop/<week>/meta/<id>.json`.
+
+### Taught skills
+
+**Not yet run**, like the loop. Lessons people chose to share (harness D-94) are graduated into skill candidates, which
+reach Relay only through the loop's prompts and skills lane and the gate (TEACHING.md):
+
+```
+node teaching/graduate.mjs <shared lesson files or folders> --out runs/teaching
+node loop/cycle.mjs --records ... --harness ../prime-agent-main --champion 0.6.121 --teaching runs/teaching
+```
+
+The first prints the rule (at least 5 machines and 25 passing uses per group of near-duplicates), the candidates and
+what it skipped; `--json` prints the same as numbers. The second adds each candidate as a free proposal that adds one
+new SKILL.md, checked and pre-screened like the rest.
 
 ## The bar: five tools on the exam
 
