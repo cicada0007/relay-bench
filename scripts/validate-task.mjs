@@ -1,46 +1,49 @@
 #!/usr/bin/env node
 // Checks that a task is usable: its judge fails every requirement on the starting repo and passes every requirement and
 // gate on the reference solution, with R0 (nothing that worked before broke) holding on both.
-// Usage: node scripts/validate-task.mjs [--tasks-dir <dir>] <task-id> [<task-id> ...]
+// Usage: node scripts/validate-task.mjs [--tasks-dir <dir>] [--e2b] [--spend <ledger>] <task-id> [<task-id> ...]
 // --tasks-dir is another tasks folder, such as the private exam's (TIERS.md); the default is this repository's tasks/.
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+//
+// An exam or check task's repository is someone else's code, mined from a public pull request, so its judge runs in an
+// E2B sandbox (scripts/e2b-judge.mjs), never on this machine; that needs E2B_API_KEY, and each sandbox is counted against
+// the E2B cap in the drafting ledger (--spend; by default drafting/spend.json beside the tasks folder; --e2b-cap-usd sets
+// the cap). --e2b judges practice tasks there too. --local-judge judges every task here, for tests only.
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { isSealed } from "./approve-task.mjs";
+import { openLedger, SpendCapError } from "./draft-spend.mjs";
+import { openE2BJudge, openLocalJudge } from "./e2b-judge.mjs";
 
 const root = join(new URL(".", import.meta.url).pathname, "..");
-const { values: options, positionals: ids } = parseArgs({ options: { "tasks-dir": { type: "string" } }, allowPositionals: true });
+const { values: options, positionals: ids } = parseArgs({
+	options: {
+		"tasks-dir": { type: "string" },
+		e2b: { type: "boolean", default: false },
+		"local-judge": { type: "boolean", default: false },
+		spend: { type: "string" },
+		"e2b-cap-usd": { type: "string" },
+	},
+	allowPositionals: true,
+});
 const tasksDir = resolve(options["tasks-dir"] ?? join(root, "tasks"));
 if (ids.length === 0) {
-	console.error("usage: node scripts/validate-task.mjs [--tasks-dir <dir>] <task-id> [<task-id> ...]");
+	console.error("usage: node scripts/validate-task.mjs [--tasks-dir <dir>] [--e2b] [--spend <ledger>] <task-id> [<task-id> ...]");
 	process.exit(2);
 }
-
-/** Copies a tree into a fresh git repository, so the judge sees what a tool would leave behind. */
-function checkout(from) {
-	const dir = mkdtempSync(join(tmpdir(), "relay-bench-"));
-	cpSync(from, dir, { recursive: true });
-	const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
-	git("init", "-q", "-b", "main");
-	git("add", "-A");
-	git("-c", "user.name=bench", "-c", "user.email=bench@example.com", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "start");
-	return dir;
+if (options.e2b && options["local-judge"]) {
+	console.error("--e2b and --local-judge cannot both be given");
+	process.exit(2);
 }
+let ledger;
+const ledgerFor = () => (ledger ??= openLedger(resolve(options.spend ?? join(dirname(tasksDir), "drafting", "spend.json")), { caps: { e2b: options["e2b-cap-usd"] } }));
 
-function judge(taskDir, tree) {
-	const dir = checkout(tree);
-	try {
-		const out = execFileSync(process.execPath, [join(taskDir, "judge", "judge.mjs"), dir], {
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: 10 * 60_000,
-		});
-		const line = out.trim().split("\n").filter(Boolean).pop();
-		return JSON.parse(line);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
+/** Where this task's judge runs: in E2B for an exam or check task (or with --e2b), here only for a practice task. */
+function judgeFor(task, taskDir, id) {
+	const inE2B = !options["local-judge"] && (options.e2b || isSealed(task));
+	if (!inE2B) return openLocalJudge({ dir: taskDir, label: id });
+	if (!process.env.E2B_API_KEY) throw new Error(`${id} is a${task.tier === "exam" ? "n" : ""} ${task.tier ?? "practice"} task: its judge runs someone else's code, so it runs in an E2B sandbox; set E2B_API_KEY`);
+	return openE2BJudge({ dir: taskDir, label: id, purpose: "validate", ledger: ledgerFor(), minutes: 20, log: (line) => console.log(line) });
 }
 
 let failed = 0;
@@ -52,9 +55,25 @@ for (const id of ids) {
 	}
 	if (problems.length === 0) {
 		const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
+		let judge;
+		try {
+			judge = await judgeFor(task, taskDir, id);
+		} catch (error) {
+			console.error(error instanceof SpendCapError ? `spend cap: ${error.message}` : error.message);
+			process.exit(error instanceof SpendCapError ? 3 : 1);
+		}
 		const started = Date.now();
-		const base = judge(taskDir, join(taskDir, "repo"));
-		const reference = judge(taskDir, join(taskDir, "reference"));
+		let base;
+		let reference;
+		try {
+			base = await judge.run("repo", { checkout: true });
+			reference = await judge.run("reference", { checkout: true });
+		} catch (error) {
+			problems.push(String(error.message).slice(0, 500));
+			base = reference = {};
+		} finally {
+			await judge.close();
+		}
 		const seconds = Math.round((Date.now() - started) / 1000);
 		for (const r of task.requirements) {
 			if (base.requirements?.[r] !== false) problems.push(`${r} is not false on the starting repo`);

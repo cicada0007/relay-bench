@@ -213,7 +213,17 @@ What it needs, in the environment (never on the command line):
 - `OPENAI_API_KEY`, for drafting only: one Responses API call per task that passes its judge check. Estimate: 2,000 to
   6,000 tokens a call, about $0.01 to $0.05 on GPT-6.1 Sol ($2 input, $10 output per million), so about $5 to $20 for
   400 tasks. A candidate whose judge does not validate makes no call.
-- No E2B and no Anthropic key: mining, drafting and validating run on this machine (git, Node 22, Python 3).
+- `E2B_API_KEY`, for drafting and validating: a candidate's judge runs that repository's own tests and gates, someone
+  else's code, so draft-task's judge check and validate-task on an exam or check task run them in an E2B sandbox from
+  the round's image, never on this machine (`scripts/e2b-judge.mjs`). One sandbox per task, with no keys, killed at the
+  end; the repository is cloned and checked out here with git only. Without the key both refuse to start;
+  `--local-judge` runs the judge here, for tests with made-up repositories only.
+- No Anthropic key. Mining runs on this machine.
+- Every paid call is counted in `../relay-exam/drafting/spend.json` (`scripts/draft-spend.mjs`), against its own cap
+  for OpenAI and for E2B. A call is reserved at the most it could cost before it is made and refused when that could
+  cross its cap; then it is settled at its real cost, from the response's usage (a draft the leak check refuses
+  included) or the sandbox's seconds. Set the caps once: `--openai-cap-usd` and `--e2b-cap-usd` on the first
+  draft-task command. With no cap set, nothing paid runs. A draft that stops at a cap exits 3.
 
 1. **Find candidates** (free; read-only GitHub). `--cutoff` is a placeholder: set it to the latest training cutoff among
    the models the exam will test, from each model's own page, before mining.
@@ -225,12 +235,17 @@ What it needs, in the environment (never on the command line):
    Run it again to add more; it skips pull requests already in the file. `--verbose` prints why each one was left out.
    Expect few Node candidates: most Node projects need packages from the network, which tasks may not.
 
-2. **Draft each candidate** (paid: one OpenAI call per task that passes its judge check).
+2. **Draft each candidate** (paid: one OpenAI call per task that passes its judge check, and one E2B sandbox per
+   candidate for the judge check).
 
    ```
    node scripts/draft-task.mjs --candidate <id> --candidates ../relay-exam/candidates.jsonl \
-     --tasks-dir ../relay-exam/tasks --model gpt-6.1-sol --tier exam
+     --tasks-dir ../relay-exam/tasks --model gpt-6.1-sol --tier exam --effort low \
+     --openai-cap-usd <usd> --e2b-cap-usd <usd>
    ```
+
+   Each call asks for at most `--max-output-tokens` (6,000 by default, reasoning included) at `--effort low` or
+   `medium`. A draft the leak check refuses is kept in `../relay-exam/drafting/refused/` for the reviewers.
 
    `--tier check` drafts a check-tier task instead. All of them, one after another:
 
@@ -241,7 +256,8 @@ What it needs, in the environment (never on the command line):
    done
    ```
 
-3. **Validate** every drafted task (free): `node scripts/validate-task.mjs --tasks-dir ../relay-exam/tasks <id> [<id> ...]`.
+3. **Validate** every drafted task (one E2B sandbox each, counted in the same ledger):
+   `node scripts/validate-task.mjs --tasks-dir ../relay-exam/tasks <id> [<id> ...]`.
    Remove a task that fails.
 
 4. **Review and approve** (a founder who did not draft the task). Build the review page, open it locally, and read each
