@@ -288,6 +288,68 @@ queues are in `../relay-exam/queue/`. To scan candidates without the pipeline:
 `node scripts/check-query.mjs --out ../relay-exam/runs/check --test <test> --champion <version> --candidate <version>
 --tasks-dir ../relay-exam/tasks` (prints pass or fail; exit 0, 1, or 2 when refused).
 
+## The improvement loop, every week
+
+**Not yet run.** Built and tested on made-up data only: no model has written a change, no build has been pre-screened
+and no release has been packaged from real runs. TIERS.md ("The improvement loop") says what the loop may see and what
+it may never change. One command runs the week's cycle and stops before anything paid:
+
+```
+node loop/cycle.mjs --records runs/round-1/records.jsonl --records runs/round-1/F/records.jsonl \
+  --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 --exam ../relay-exam
+```
+
+It prints one line per step (ran, skipped or stopped, and why) and writes the week's folder, `runs/loop/<2026-W43>/`:
+`report.md` in plain words, one `proposals/<id>.patch` and `.json` per proposal, `cycle.json`, `spend.jsonl`,
+`summary.json` (what the meta loop reads), and `release/` once a release is packaged. `--dry-run` writes nothing. Run
+the same command again to resume: the week's analysis and proposals are fixed at its first run.
+
+| Step | What it does | Paid |
+| --- | --- | --- |
+| meta | judges the loop's own settings by gated gain per dollar over the last 8 cycles; proposes, never applies | no |
+| analyze | failure clusters from practice and public runs and the queue report in each Relay run | no |
+| propose | one change per lane, checked against its lane and the invariants | the writer lanes only |
+| exam | kinds of task the exam should mine more of, into `../relay-exam/queue/loop-proposals.jsonl` for a person | no |
+| prescreen | each proposal's build against the champion: the dev set (practice), then the check tier's one word | yes |
+| package | one combined release: `PR_BODY.md`, `release.patch`, `lanes.json`, `ledger-preview.json` | no |
+
+The lanes, each with a fixed budget per cycle in `loop/settings.json` (estimates for the founders to confirm):
+
+| Lane | What it may change | How | Budget |
+| --- | --- | --- | --- |
+| config | relay.arch `queue.stuck`, `queue.requestCheck`, attempts, a plan's size, turns per attempt | the loop's rules | $6 |
+| routing | relay.arch `routing`: the tiers' models, the suitability table, the Decider's share (D-46, D-60, D-61) | the loop's rules | $6 |
+| memory | relay.arch `memory.autoRefine`, the learning mode (D-90), from the learning ablation's two arms | the loop's rules | $6 |
+| tools | the text of a `tool.*` prompt (the tools as the model sees them) | a model writes it | $6 |
+| prompts and skills | the text of one prompt relay.arch lists, or a skill's SKILL.md | a model writes it | $8 |
+| architecture | relay.arch `subAgents` and `topology` (D-91) | the loop's rules | $6 |
+| exam proposals | nothing in Relay: kinds of task to mine, for a person to approve or drop | free | $0 |
+| runtime | later: the E2B sandbox a task runs in (D-89); documented only | | $0 |
+
+Before the first paid cycle:
+
+1. **A founder approves the settings:** `node loop/meta.mjs approve --by <name>`. Every paid step refuses settings no
+   person approved, or changed since.
+2. **Keys in the environment:** `RELAY_BENCH_ANTHROPIC_KEY` (the pre-screen's runs, and the writer: `claude-opus-5-5`
+   unless `--writer-model` says otherwise, never an OpenAI model, since OpenAI drafts the exam) and `E2B_API_KEY`.
+3. **A build per proposal.** The loop never builds, publishes or opens anything in the harness. In a harness worktree at
+   `v<champion>`: `git apply runs/loop/<week>/proposals/<id>.patch`, then `npm run arch`, `npm run build` and
+   `npm run release:pack`; copy the Relay package to `runs/loop/<week>/packages/<id>.tgz`. A proposal with no build
+   waits.
+4. **Run it with a cap**, a founder's yes first: add `--spend-cap 20` (model dollars for this command; sandbox time has
+   its own cap, `prescreen.e2bCapUsd`). Nothing starts whose cap would pass its lane's budget or the spend cap.
+
+Each pre-screen runs both arms (`relay@<champion>` and `relay@pkg`, a dev test) on `prescreen.devTasks` and reads them
+with the gate's own code; a build the gate's read blocks, whose interval is all below zero, or that costs or takes more
+than the gate allows, is dropped. Then it runs the check tier and asks `scripts/check-query.mjs` once: every run and the
+answer are counted against the leak budget, and the cycle asks at most `prescreen.maxSelectionQueries` times. The
+package's `PR_BODY.md` says how to gate the release on the exam (`--combined lanes.json`) and which ledger entry it would
+make; `scripts/ledger.mjs write` still writes it only after that gate stops with PASS and a founder signs.
+
+The meta loop: `node loop/meta.mjs judge` prints each lane's spend, gated gain and gain per dollar, and its proposals
+(also in `runs/loop/<week>/meta/`). A person applies one with `node loop/meta.mjs approve --by <name> --proposal
+runs/loop/<week>/meta/<id>.json`.
+
 ## The bar: five tools on the exam
 
 **Not yet run.** Nothing below has been run: no sandbox, no model call. The Codex arm, the OpenAI meter and the bar's

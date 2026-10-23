@@ -12,6 +12,9 @@
 //
 // --sample <n> runs a fixed sample of n of the chosen tasks (a shuffle seeded 20261015). The sample is saved as
 // <out>/<test>.tasks.json on the first real run, and a resumed stage reads it back, so it never changes mid-stage.
+//
+// --relay-package <tgz> gives the tool relay@pkg a Relay build that is not released (a pre-screen, GATE.md): only that
+// tool's runs get it, and only in a test whose name starts with dev or pilot.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -37,6 +40,7 @@ const { values: args } = parseArgs({
 		"dry-run": { type: "boolean", default: false },
 		faults: { type: "string" },
 		sample: { type: "string" },
+		"relay-package": { type: "string" },
 	},
 });
 for (const name of ["test", "model", "cap-usd", "stage-cap-usd"]) if (!args[name]) throw new Error(`--${name} is required`);
@@ -55,6 +59,10 @@ for (const tool of tools) {
 	if (!resolved) throw new Error(`unknown tool ${tool}`);
 	if (!armRuns(resolved.arm, args.model)) throw new Error(`${tool} does not run ${providerOf(args.model)} models such as ${args.model}; nothing was run`);
 }
+// An unreleased build is pre-screened only, never counted (GATE.md, "Released versions only, for a counted gate").
+if (tools.includes("relay@pkg") && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package <tgz>; nothing was run");
+if (args["relay-package"] && counted) throw new Error(`--relay-package is for dev and pilot tests only, not ${args.test}; nothing was run`);
+if (args["relay-package"] && !existsSync(resolve(args["relay-package"]))) throw new Error(`no Relay package at ${args["relay-package"]}; nothing was run`);
 const capUsd = Number(args["cap-usd"]);
 const stageCap = Number(args["stage-cap-usd"]);
 const e2bCap = Number(args["e2b-cap-usd"]);
@@ -154,6 +162,7 @@ function runOne(job) {
 				"--task", job.task, "--tool", job.tool, "--model", args.model, "--rep", String(job.rep),
 				"--cap-usd", String(capUsd), "--test", args.test, "--out", args.out, "--tasks-dir", args["tasks-dir"],
 				...(job.fault ? ["--fault", job.fault] : []),
+				...(job.tool === "relay@pkg" ? ["--relay-package", resolve(args["relay-package"])] : []),
 			],
 			{ stdio: ["ignore", "pipe", "pipe"] },
 		);

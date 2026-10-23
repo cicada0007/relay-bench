@@ -120,3 +120,29 @@ task from a folder inside it, and refuses to write their runs inside it, for eve
 part of each drawn run; a person marks each row agree or disagree with the judge. `scripts/grader-agreement.mjs` reads
 the marked sheets and flags every judge people agree with less than 90% of the time (more than one disagreement in ten),
 which is then fixed for every tool alike and its tasks graded again (`runner/rejudge.mjs`).
+
+## The improvement loop
+
+The loop (`loop/`, RUNBOOK.md "The improvement loop") proposes changes to Relay every week and never ships one. **Not
+yet run**: tested on made-up data only.
+
+- **What it reads.** Runs of practice tasks and public tasks (Terminal-Bench 2.1), with the queue report Relay wrote in
+  each run. A records file inside the exam's folder, or holding a run of an exam or check task, is refused whole. Of the
+  check tier it sees one word per question, through `scripts/check-query.mjs`, counted against the leak budget and capped
+  per cycle. Of the exam it sees nothing; a release reaches the exam only through the gate.
+- **What it proposes.** One change per lane: config, routing, memory, tools, prompts and skills, architecture (a diff
+  to the harness's `relay.arch.json`, D-91, and the code that holds a value when relay.arch reads it from code), and
+  exam proposals. Runtime is documented only. A writer lane's change must stay inside the one prompt it edits, and is
+  refused when it names anything from the practice failures it was shown, since it would learn the task, not the skill.
+- **Exam proposals** are kinds of task to mine more of (a language, a kind, a level), queued for a person in
+  `queue/loop-proposals.jsonl`. A task the loop picked would be one it has seen, so it never proposes a task, and it
+  never approves anything.
+- **What it may never change** (`loop/lanes.mjs`, INVARIANTS): the release's ceilings and spend caps; the trusted core
+  (release signing and trust, the installer, the switch-off list, the audit log, project trust, and the gates and scope
+  a task must pass); the exam's contents and approval; the graders; the gate's rules, the check tier's door, the ledger
+  and the loop's own rules; and tenant data. A proposal is checked from the JSON paths and files its change touches,
+  never from what it says about itself, and one that reaches an invariant is refused before anything is spent.
+- **The meta loop** judges the loop's own settings (lane budgets, which lanes run, proposals per lane, the cluster
+  thresholds) by gated gain per dollar over the last cycles, read from the ledger. It proposes changes and a person
+  applies them; it never raises the total budget or touches the pre-screen's sizes.
+
