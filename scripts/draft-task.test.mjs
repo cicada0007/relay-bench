@@ -8,6 +8,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { chooseChecks, draftTask, gatesFor, isRunnableTest, leakProblems, openaiClient, REQUEST_INSTRUCTIONS } from "./draft-task.mjs";
+import { E2B_USD_PER_SECOND, openLedger, SpendCapError } from "./draft-spend.mjs";
+import { openE2BJudge, openLocalJudge } from "./e2b-judge.mjs";
+import { TEMPLATE_NAME } from "../sandbox/template.mjs";
+
+const HERE = dirname(new URL(import.meta.url).pathname);
 
 const hasPython = (() => {
 	try {
@@ -121,7 +126,7 @@ test("a Node pull request becomes a task whose judge fails the starting reposito
 	const tasksDir = mkdtempSync(join(tmpdir(), "draft-tasks-"));
 	const f = fakes("Make sum add its two numbers.\n\nCalling `sum(2, 3)` should return 5; today it returns -1.\n\nAdd or update tests for the change in the repository's existing test style.");
 	try {
-		const result = await draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, modelId: "gpt-test", model: f.model, github: f.github, now: new Date("2026-10-23T00:00:00Z") });
+		const result = await draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, modelId: "gpt-test", model: f.model, github: f.github, openJudge: openLocalJudge, now: new Date("2026-10-23T00:00:00Z") });
 		const dir = join(tasksDir, "example-javascript-7");
 		assert.equal(result.dir, dir);
 		const task = JSON.parse(readFileSync(join(dir, "task.json"), "utf8"));
@@ -168,7 +173,7 @@ test("a Python pull request becomes a task too, with changed and unchanged tests
 	const tasksDir = mkdtempSync(join(tmpdir(), "draft-tasks-"));
 	const f = fakes("Fix mean.\n\n`mean([2, 4])` should be 3, and `mean([])` should raise ValueError.\n");
 	try {
-		await draftTask({ candidate: candidateFor(up, "python"), tasksDir, model: f.model, github: f.github, tier: "check" });
+		await draftTask({ candidate: candidateFor(up, "python"), tasksDir, model: f.model, github: f.github, openJudge: openLocalJudge, tier: "check" });
 		const dir = join(tasksDir, "example-python-7");
 		const task = JSON.parse(readFileSync(join(dir, "task.json"), "utf8"));
 		assert.equal(task.tier, "check");
@@ -194,7 +199,7 @@ test("a drafted request that repeats the fix is refused and nothing is written",
 	const f = fakes("Fix sum. Change it to: exports.sum = (a, b) => a + b; // add the two numbers together\n");
 	try {
 		await assert.rejects(
-			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, model: f.model, github: f.github }),
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, model: f.model, github: f.github, openJudge: openLocalJudge }),
 			/repeats a line the fix added/,
 		);
 		assert.ok(!existsSync(join(tasksDir, "example-javascript-7")));
@@ -209,7 +214,7 @@ test("a pull request whose tests already pass before the fix costs no model call
 	const tasksDir = mkdtempSync(join(tmpdir(), "draft-tasks-"));
 	const f = fakes("anything");
 	try {
-		await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, model: f.model, github: f.github }), /no test fails before the fix/);
+		await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, model: f.model, github: f.github, openJudge: openLocalJudge }), /no test fails before the fix/);
 		assert.equal(f.calls.length, 0);
 	} finally {
 		rmSync(up.dir, { recursive: true, force: true });
@@ -262,4 +267,312 @@ test("the OpenAI client posts to the Responses API with the key and reads the te
 	assert.equal(sent[0].init.headers.authorization, "Bearer sk-test");
 	assert.equal(JSON.parse(sent[0].init.body).instructions, "rules");
 	assert.throws(() => openaiClient({}), /OPENAI_API_KEY/);
+});
+
+// ---- The judge check in E2B, and the drafting ledger ----
+
+/**
+ * A fake E2B: each sandbox is a scratch folder standing in for /home/user, and its commands run here with sh. It
+ * records what each sandbox was created with, every command's environment, and every kill.
+ */
+function fakeE2B({ failCreate = false } = {}) {
+	const seen = { created: [], commands: [], killed: 0, killedAt: [] };
+	class Sandbox {
+		static async create(template, opts) {
+			if (failCreate) throw new Error("no capacity");
+			const box = new Sandbox(mkdtempSync(join(tmpdir(), "fake-e2b-")), `fake-${seen.created.length + 1}`);
+			seen.created.push({ template, opts });
+			return box;
+		}
+		constructor(home, id) {
+			this.home = home;
+			this.sandboxId = id;
+			const here = (text) => text.replaceAll("/home/user", home);
+			this.files = {
+				write: async (path, data) => {
+					mkdirSync(dirname(here(path)), { recursive: true });
+					writeFileSync(here(path), data);
+				},
+				read: async (path) => readFileSync(here(path), "utf8"),
+			};
+			this.commands = {
+				run: async (command, opts = {}) => {
+					seen.commands.push({ command, envs: opts.envs });
+					try {
+						const stdout = execFileSync("sh", ["-c", here(command.replace(/^export PATH=[^;]*; /, ""))], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+						return { exitCode: 0, stdout, stderr: "" };
+					} catch (error) {
+						throw Object.assign(new Error("exit"), { exitCode: error.status, stdout: String(error.stdout ?? ""), stderr: String(error.stderr ?? "") });
+					}
+				},
+			};
+		}
+		async kill() {
+			seen.killed++;
+			seen.killedAt.push(Date.now());
+			rmSync(this.home, { recursive: true, force: true });
+		}
+	}
+	return { Sandbox, seen };
+}
+
+/** A clock that moves a minute every time it is read, so a sandbox opened and closed lives exactly 60 seconds. */
+const minuteClock = () => {
+	let t = 0;
+	return () => (t += 60_000);
+};
+
+const LUNA_REPLY = { model: "gpt-6-luna-2026-09-30", status: "completed", serviceTier: "default", usage: { input_tokens: 900, output_tokens: 700, output_tokens_details: { reasoning_tokens: 400 } } };
+
+function countingFakes(text, reply = LUNA_REPLY, seen) {
+	const calls = [];
+	return {
+		calls,
+		model: {
+			async complete(args) {
+				calls.push({ ...args, killedBefore: seen?.killed ?? 0 });
+				return { ...reply, text };
+			},
+		},
+		github: { async get(path) { return path === "/repos/example/tiny/issues/3" ? ISSUE : null; } },
+	};
+}
+
+test("the judge check runs in an E2B sandbox with no keys, which is killed before the model is called and counted", async () => {
+	const up = upstream(NODE);
+	const root = mkdtempSync(join(tmpdir(), "draft-e2b-"));
+	const tasksDir = join(root, "tasks");
+	const e2b = fakeE2B();
+	const ledger = openLedger(join(root, "drafting", "spend.json"), { caps: { openai: 1, e2b: 1 } });
+	const f = countingFakes("Make sum add its two numbers.\n\nCalling `sum(2, 3)` should return 5; today it returns -1.\n", LUNA_REPLY, e2b.seen);
+	const saved = process.env.OPENAI_API_KEY;
+	process.env.OPENAI_API_KEY = "sk-must-never-reach-a-sandbox";
+	try {
+		const result = await draftTask({
+			candidate: candidateFor(up, "javascript"),
+			tasksDir,
+			modelId: "gpt-6-luna",
+			effort: "medium",
+			maxOutputTokens: 3000,
+			model: f.model,
+			github: f.github,
+			ledger,
+			openJudge: (o) => openE2BJudge({ ...o, ledger, Sandbox: e2b.Sandbox, clock: minuteClock() }),
+		});
+		// One sandbox, from the round's image, with no environment of its own; no command carries a key.
+		assert.equal(e2b.seen.created.length, 1);
+		assert.equal(e2b.seen.created[0].template, TEMPLATE_NAME);
+		assert.deepEqual(e2b.seen.created[0].opts.envs, {});
+		const everything = JSON.stringify(e2b.seen);
+		assert.doesNotMatch(everything, /sk-must-never/);
+		for (const c of e2b.seen.commands) assert.ok(!Object.keys(c.envs ?? {}).some((k) => /KEY|TOKEN|SECRET/.test(k)), c.command);
+		// Five judge runs, all in the sandbox: three to read the outcomes, two to check the judge.
+		assert.equal(e2b.seen.commands.filter((c) => /judge\/judge\.mjs/.test(c.command)).length, 5);
+		assert.equal(e2b.seen.commands.filter((c) => /--outcomes/.test(c.command)).length, 3);
+		// Each judge line goes to a file in the sandbox and is read back whole: a pipe cuts a long line at 64 KiB.
+		assert.ok(e2b.seen.commands.filter((c) => /judge\/judge\.mjs/.test(c.command)).every((c) => /> \/home\/user\/judge-run-\d+\.out$/.test(c.command)));
+		assert.equal(e2b.seen.killed, 1);
+		assert.equal(f.calls.length, 1);
+		assert.equal(f.calls[0].killedBefore, 1, "the sandbox is gone before the model is called");
+		assert.equal(f.calls[0].effort, "medium");
+		assert.equal(f.calls[0].maxOutputTokens, 3000);
+		assert.deepEqual(result.judgeCheck, { where: "e2b", sandboxId: "fake-1", seconds: 60, costUsd: 60 * E2B_USD_PER_SECOND });
+
+		const config = JSON.parse(readFileSync(join(result.dir, "judge", "judge.json"), "utf8"));
+		assert.deepEqual(config.checks.R1, ["test/double.test.js::double is a sum", "test/sum.test.js::sum > adds two numbers"]);
+
+		const book = JSON.parse(readFileSync(ledger.path, "utf8"));
+		assert.equal(book.e2b.sandboxes.length, 1);
+		assert.deepEqual([book.e2b.sandboxes[0].state, book.e2b.sandboxes[0].seconds, book.e2b.sandboxes[0].sandboxId, book.e2b.sandboxes[0].purpose], ["settled", 60, "fake-1", "draft-judge"]);
+		assert.equal(book.openai.calls.length, 1);
+		const call = book.openai.calls[0];
+		assert.deepEqual([call.state, call.outcome, call.model, call.reported, call.effort, call.maxOutputTokens], ["settled", "drafted", "gpt-6-luna", "gpt-6-luna-2026-09-30", "medium", 3000]);
+		assert.equal(call.costUsd, (900 * 0.1 + 700 * 0.5) / 1e6);
+		assert.ok(call.boundUsd >= call.costUsd);
+		assert.equal(result.costUsd, call.costUsd);
+
+		// The judge's checkout mode, as validate-task.mjs uses it in E2B: the drafted judge fails repo/ and passes reference/.
+		const judge = await openE2BJudge({ dir: result.dir, label: "validate", purpose: "validate", ledger, Sandbox: e2b.Sandbox, minutes: 20 });
+		const onRepo = await judge.run("repo", { checkout: true });
+		const onReference = await judge.run("reference", { checkout: true });
+		await judge.close();
+		assert.deepEqual([onRepo.requirements.R1, onRepo.R0, onReference.requirements.R1, onReference.R0, onReference.gates.test], [false, true, true, true, true]);
+		assert.equal(e2b.seen.killed, 2);
+		await assert.rejects(judge.run("../etc"), /not a tree/);
+	} finally {
+		if (saved === undefined) delete process.env.OPENAI_API_KEY;
+		else process.env.OPENAI_API_KEY = saved;
+		rmSync(up.dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a candidate that cannot be judged still has its sandbox killed and counted, and costs no model call", async () => {
+	const up = upstream({ ...NODE, fix: { "lib/math.js": NODE.base["lib/math.js"].replace("a * 2", "2 * a"), "test/double.test.js": NODE.base["test/double.test.js"] + "// note\n" } });
+	const root = mkdtempSync(join(tmpdir(), "draft-e2b-"));
+	const e2b = fakeE2B();
+	const ledger = openLedger(join(root, "spend.json"), { caps: { openai: 1, e2b: 1 } });
+	const f = countingFakes("anything");
+	try {
+		await assert.rejects(
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: f.model, github: f.github, ledger, openJudge: (o) => openE2BJudge({ ...o, ledger, Sandbox: e2b.Sandbox, clock: minuteClock() }) }),
+			/no test fails before the fix/,
+		);
+		assert.equal(e2b.seen.killed, 1);
+		assert.equal(f.calls.length, 0);
+		const t = ledger.totals();
+		assert.equal(t.openai.calls, 0);
+		assert.equal(t.e2b.sandboxes, 1);
+		assert.equal(t.e2b.spentUsd, Math.round(60 * E2B_USD_PER_SECOND * 1e6) / 1e6);
+	} finally {
+		rmSync(up.dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("caps refuse before anything paid starts: no sandbox when E2B is spent, no judge check when OpenAI is", async () => {
+	const up = upstream(NODE);
+	const root = mkdtempSync(join(tmpdir(), "draft-e2b-"));
+	const e2b = fakeE2B();
+	const f = countingFakes("Make sum add.\n");
+	const opened = [];
+	try {
+		// E2B: a 30-minute sandbox could cost $0.0828, more than this cap leaves.
+		const small = openLedger(join(root, "a.json"), { caps: { openai: 1, e2b: 0.05 } });
+		await assert.rejects(
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: f.model, github: f.github, ledger: small, openJudge: (o) => openE2BJudge({ ...o, ledger: small, Sandbox: e2b.Sandbox }) }),
+			(e) => e instanceof SpendCapError && /e2b/.test(e.message),
+		);
+		assert.equal(e2b.seen.created.length, 0);
+		// OpenAI: one more Sol call could cross the cap, so the judge check is never opened.
+		const spent = openLedger(join(root, "b.json"), { caps: { openai: 0.05, e2b: 1 } });
+		await assert.rejects(
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6.1-sol", model: f.model, github: f.github, ledger: spent, openJudge: (o) => opened.push(o) }),
+			(e) => e instanceof SpendCapError && /OpenAI/.test(e.message),
+		);
+		// No cap at all refuses too, and a model with no list price cannot be bounded.
+		const none = openLedger(join(root, "c.json"));
+		await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: f.model, github: f.github, ledger: none, openJudge: (o) => opened.push(o) }), /no OpenAI spending cap/);
+		await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-test", model: f.model, github: f.github, ledger: spent, openJudge: (o) => opened.push(o) }), /no list price for gpt-test/);
+		await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), effort: "high", model: f.model, github: f.github, openJudge: openLocalJudge }), /--effort must be low or medium/);
+		assert.equal(opened.length, 0);
+		assert.equal(f.calls.length, 0);
+		// A sandbox that fails to start is still counted for the time it took.
+		const failing = fakeE2B({ failCreate: true });
+		const ledger = openLedger(join(root, "d.json"), { caps: { openai: 1, e2b: 1 } });
+		await assert.rejects(openE2BJudge({ dir: up.dir, label: "x", ledger, Sandbox: failing.Sandbox, clock: minuteClock() }), /could not start an E2B sandbox: no capacity/);
+		const entry = JSON.parse(readFileSync(ledger.path, "utf8")).e2b.sandboxes[0];
+		assert.deepEqual([entry.state, entry.seconds, entry.error], ["settled", 60, "no capacity"]);
+	} finally {
+		rmSync(up.dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("a draft the leak check refuses is still counted, and kept for the reviewers", async () => {
+	const up = upstream(NODE);
+	const root = mkdtempSync(join(tmpdir(), "draft-e2b-"));
+	const ledger = openLedger(join(root, "drafting", "spend.json"), { caps: { openai: 1, e2b: 1 } });
+	const f = countingFakes("Fix sum. Change it to: exports.sum = (a, b) => a + b; // add the two numbers together\n");
+	try {
+		await assert.rejects(
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: f.model, github: f.github, ledger, refusedDir: join(root, "drafting", "refused"), openJudge: openLocalJudge }),
+			/repeats a line the fix added/,
+		);
+		const call = JSON.parse(readFileSync(ledger.path, "utf8")).openai.calls[0];
+		assert.deepEqual([call.state, call.outcome], ["settled", "refused"]);
+		assert.equal(call.costUsd, (900 * 0.1 + 700 * 0.5) / 1e6);
+		assert.match(call.why[0], /repeats a line the fix added/);
+		const kept = readFileSync(join(root, "drafting", "refused", "example-javascript-7.gpt-6-luna.md"), "utf8");
+		assert.match(kept, /refused by draft-task's leak check/);
+		assert.match(kept, /a \+ b/);
+		assert.equal(call.refusedDraft, join(root, "drafting", "refused", "example-javascript-7.gpt-6-luna.md"));
+		assert.ok(!existsSync(join(root, "tasks", "example-javascript-7")));
+
+		// An answer cut short at max_output_tokens is counted too, and nothing is written.
+		const cut = countingFakes("", { ...LUNA_REPLY, status: "incomplete", incompleteReason: "max_output_tokens", usage: { input_tokens: 900, output_tokens: 6000 } });
+		await assert.rejects(
+			draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: cut.model, github: cut.github, ledger, openJudge: openLocalJudge }),
+			/cut short \(max_output_tokens\)/,
+		);
+		const second = JSON.parse(readFileSync(ledger.path, "utf8")).openai.calls[1];
+		assert.deepEqual([second.state, second.outcome, second.costUsd], ["settled", "incomplete", (900 * 0.1 + 6000 * 0.5) / 1e6]);
+		// A request OpenAI turns away (4xx) costs nothing; one that fails any other way stays counted at its most.
+		for (const [status, counted] of [[400, 0], [undefined, "bound"]]) {
+			const broken = { model: { async complete() { throw Object.assign(new Error(`OpenAI ${status}`), { status }); } }, github: cut.github };
+			await assert.rejects(draftTask({ candidate: candidateFor(up, "javascript"), tasksDir: join(root, "tasks"), modelId: "gpt-6-luna", model: broken.model, github: broken.github, ledger, openJudge: openLocalJudge }), /OpenAI/);
+			const last = JSON.parse(readFileSync(ledger.path, "utf8")).openai.calls.at(-1);
+			if (counted === 0) assert.deepEqual([last.state, last.costUsd, last.outcome], ["settled", 0, "error"]);
+			else assert.deepEqual([last.state, last.costUsd, last.outcome], ["unknown", undefined, "error"]);
+		}
+		const book = JSON.parse(readFileSync(ledger.path, "utf8"));
+		assert.equal(book.openai.spentUsd, Math.round(((900 * 0.1 + 700 * 0.5) / 1e6 + (900 * 0.1 + 6000 * 0.5) / 1e6 + book.openai.calls[3].boundUsd) * 1e6) / 1e6);
+	} finally {
+		rmSync(up.dir, { recursive: true, force: true });
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("the OpenAI client bounds each call and returns an answer cut short instead of throwing", async () => {
+	const sent = [];
+	const reply = (status, body) => async (url, init) => {
+		sent.push(JSON.parse(init.body));
+		return new Response(JSON.stringify(body), { status });
+	};
+	const cut = openaiClient({ apiKey: "sk-test", fetch: reply(200, { model: "gpt-6-luna-x", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, service_tier: "default", output: [{ type: "reasoning" }], usage: { input_tokens: 5, output_tokens: 50 } }) });
+	const r = await cut.complete({ model: "gpt-6-luna", instructions: "rules", input: "issue", maxOutputTokens: 50, effort: "medium" });
+	assert.deepEqual([r.text, r.status, r.incompleteReason, r.serviceTier, r.usage.output_tokens], ["", "incomplete", "max_output_tokens", "default", 50]);
+	assert.deepEqual([sent[0].max_output_tokens, sent[0].reasoning, sent[0].service_tier, sent[0].store], [50, { effort: "medium" }, "default", false]);
+	await cut.complete({ model: "gpt-6-luna", instructions: "rules", input: "issue" });
+	assert.deepEqual([sent[1].max_output_tokens, sent[1].reasoning.effort], [6000, "low"]);
+	const refused = openaiClient({ apiKey: "sk-test", fetch: reply(400, { error: { message: "unknown parameter" } }) });
+	await assert.rejects(refused.complete({ model: "m", instructions: "i", input: "x" }), (e) => e.status === 400 && /OpenAI 400: unknown parameter/.test(e.message));
+});
+
+test("the command refuses to run the judge check on this machine unless told it is a test", () => {
+	const root = mkdtempSync(join(tmpdir(), "draft-cli-"));
+	try {
+		const env = { ...process.env };
+		delete env.E2B_API_KEY;
+		const run = (args) => {
+			try {
+				execFileSync(process.execPath, [join(HERE, "draft-task.mjs"), "--candidate", "x", "--candidates", join(root, "none.jsonl"), "--tasks-dir", join(root, "tasks"), ...args], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+				return "";
+			} catch (error) {
+				return String(error.stderr);
+			}
+		};
+		assert.match(run([]), /runs in an E2B sandbox: set E2B_API_KEY/);
+		// With --local-judge it gets as far as reading the candidates.
+		assert.match(run(["--local-judge"]), /ENOENT|no candidate/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test("validate-task judges an exam task in E2B only: here it needs --local-judge", async () => {
+	const up = upstream(NODE);
+	const tasksDir = mkdtempSync(join(tmpdir(), "draft-tasks-"));
+	const f = fakes("Make sum add its two numbers.\n\nCalling `sum(2, 3)` should return 5; today it returns -1.\n");
+	try {
+		await draftTask({ candidate: candidateFor(up, "javascript"), tasksDir, model: f.model, github: f.github, openJudge: openLocalJudge });
+		const env = { ...process.env };
+		delete env.E2B_API_KEY;
+		const validate = (...args) => {
+			try {
+				return { code: 0, out: execFileSync(process.execPath, [join(HERE, "validate-task.mjs"), "--tasks-dir", tasksDir, ...args, "example-javascript-7"], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) };
+			} catch (error) {
+				return { code: error.status, out: `${error.stdout}${error.stderr}` };
+			}
+		};
+		const refused = validate();
+		assert.equal(refused.code, 1);
+		assert.match(refused.out, /an exam task: its judge runs someone else's code, so it runs in an E2B sandbox; set E2B_API_KEY/);
+		const local = validate("--local-judge");
+		assert.equal(local.code, 0, local.out);
+		assert.match(local.out, /ok {3}example-javascript-7/);
+	} finally {
+		rmSync(up.dir, { recursive: true, force: true });
+		rmSync(tasksDir, { recursive: true, force: true });
+	}
 });

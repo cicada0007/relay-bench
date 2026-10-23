@@ -16,8 +16,22 @@
 // The judge is checked before the model is called (it must fail repo/ and pass reference/), so a candidate that cannot
 // be judged costs no model call. Then validate the task with validate-task.mjs, as every task is.
 //
+// The judge check runs the candidate's own tests and gates five times: someone else's code. It runs them in an E2B
+// sandbox (scripts/e2b-judge.mjs), never on this machine, whenever E2B_API_KEY is set; without it, draft-task refuses
+// to start. --local-judge runs them here instead, for tests with made-up repositories only. The repository is cloned and
+// checked out here with git, which runs none of its code.
+//
 //   node scripts/draft-task.mjs --candidate <id> \
-//     --candidates ../relay-exam/candidates.jsonl --tasks-dir ../relay-exam/tasks [--model gpt-6.1-sol] [--tier exam] [--level 1]
+//     --candidates ../relay-exam/candidates.jsonl --tasks-dir ../relay-exam/tasks [--model gpt-6.1-sol] [--tier exam] [--level 1] \
+//     [--effort low] [--max-output-tokens 6000] [--spend ../relay-exam/drafting/spend.json] [--openai-cap-usd 8] [--e2b-cap-usd 1]
+//
+// Every paid call is bounded and counted in the drafting ledger (scripts/draft-spend.mjs; by default drafting/spend.json
+// beside the tasks folder). The model call asks for at most --max-output-tokens (reasoning included) at a low or medium
+// reasoning effort, so its most possible cost is known before it is made; the call is refused when that could take the
+// ledger past its OpenAI cap, and afterwards its real cost is read from the response's usage, a draft the leak check
+// refuses included. The sandbox is counted the same way against the E2B cap, at its time limit before it starts and at
+// its seconds once it is killed. --openai-cap-usd and --e2b-cap-usd set the caps kept in the ledger; with no cap, nothing
+// paid runs. A refused draft is kept in drafting/refused/ beside the ledger, for the people who review the drafts.
 //
 // The model's key is OPENAI_API_KEY, from the environment. It reads the issue from the GitHub API (GITHUB_TOKEN or
 // GH_TOKEN if set; public issues need none) and clones the public repository read-only. Nothing is written to GitHub.
@@ -27,11 +41,17 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { maxCallUsd, openaiCostUsd, openLedger, SpendCapError, usageSummary } from "./draft-spend.mjs";
+import { openE2BJudge, openLocalJudge } from "./e2b-judge.mjs";
 import { githubClient, isTestPath, languageOf } from "./mine-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const JUDGE_TEMPLATE = join(ROOT, "scripts", "exam-judge");
 export const DEFAULT_MODEL = "gpt-6.1-sol";
+/** The model call's bounds: a request is under 400 words, so this leaves room for the reasoning before it. */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 6000;
+export const EFFORTS = Object.freeze(["low", "medium"]);
+export const DEFAULT_EFFORT = "low";
 
 /** What the drafting model is told. It only ever sees the issue: the fix is never in its input. */
 export const REQUEST_INSTRUCTIONS = `You write the task text for a coding test. You are given an issue that someone filed against a software project. Write the request a developer receives: what is wrong or what is wanted, in plain words, so that a careful developer who reads only your text and the project's code can make the change.
@@ -70,27 +90,81 @@ export function leakProblems(request, { addedLines = [], issueNumber, prNumber }
 	return problems;
 }
 
-/** OpenAI's Responses API, for the drafting model only. The key comes from the environment and is never printed. */
+/**
+ * OpenAI's Responses API, for the drafting model only. The key comes from the environment and is never printed. Each
+ * call is bounded: at most maxOutputTokens (reasoning included), at the given reasoning effort, on the default
+ * processing tier. An answer cut short is returned, not thrown, so its usage is still counted.
+ */
 export function openaiClient({ apiKey, fetch: doFetch = globalThis.fetch, baseUrl = "https://api.openai.com" } = {}) {
 	if (!apiKey) throw new Error("OPENAI_API_KEY is not set");
 	return {
-		async complete({ model, instructions, input }) {
+		async complete({ model, instructions, input, maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS, effort = DEFAULT_EFFORT }) {
 			const res = await doFetch(`${baseUrl}/v1/responses`, {
 				method: "POST",
 				headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-				body: JSON.stringify({ model, instructions, input: [{ role: "user", content: [{ type: "input_text", text: input }] }], store: false }),
+				body: JSON.stringify({
+					model,
+					instructions,
+					input: [{ role: "user", content: [{ type: "input_text", text: input }] }],
+					max_output_tokens: maxOutputTokens,
+					reasoning: { effort },
+					service_tier: "default",
+					store: false,
+				}),
 			});
 			const body = await res.json().catch(() => ({}));
-			if (!res.ok) throw new Error(`OpenAI ${res.status}: ${body?.error?.message ?? "no message"}`);
+			if (!res.ok) {
+				const error = new Error(`OpenAI ${res.status}: ${body?.error?.message ?? "no message"}`);
+				error.status = res.status;
+				throw error;
+			}
 			const text = (body.output ?? [])
 				.filter((o) => o.type === "message")
 				.flatMap((o) => o.content ?? [])
 				.filter((c) => c.type === "output_text")
 				.map((c) => c.text)
 				.join("");
-			return { text, model: body.model ?? model, usage: body.usage };
+			return {
+				text,
+				model: body.model ?? model,
+				usage: body.usage,
+				status: body.status,
+				incompleteReason: body.incomplete_details?.reason,
+				serviceTier: body.service_tier,
+			};
 		},
 	};
+}
+
+/**
+ * One bounded, counted model call (scripts/draft-spend.mjs): reserved at its most before it is made, refused when that
+ * could cross the cap, then settled at what the response's usage says it cost. Returns the reply and the ledger entry.
+ */
+async function countedCall({ model, modelId, instructions, input, maxOutputTokens, effort, ledger, label }) {
+	if (!ledger) return { drafted: await model.complete({ model: modelId, instructions, input, maxOutputTokens, effort }) };
+	const boundUsd = maxCallUsd(modelId, { inputBytes: Buffer.byteLength(instructions) + Buffer.byteLength(input), maxOutputTokens });
+	if (boundUsd === undefined) throw new Error(`${label}: no list price for ${modelId}, so the call cannot be bounded; it is not made`);
+	const entry = ledger.reserve("openai", { boundUsd, candidate: label, model: modelId, effort, maxOutputTokens });
+	let drafted;
+	try {
+		drafted = await model.complete({ model: modelId, instructions, input, maxOutputTokens, effort });
+	} catch (error) {
+		// A request OpenAI refused outright (4xx) is not billed; any other failure may have been, so it stays counted at
+		// its most.
+		const refused = error.status >= 400 && error.status < 500;
+		ledger.settle("openai", entry, { ...(refused ? { costUsd: 0 } : {}), outcome: "error", why: String(error.message).slice(0, 300) });
+		throw error;
+	}
+	const costUsd = openaiCostUsd(drafted.usage, drafted.model ?? modelId, drafted.serviceTier);
+	ledger.settle("openai", entry, {
+		costUsd,
+		reported: drafted.model,
+		serviceTier: drafted.serviceTier,
+		status: drafted.status,
+		usage: drafted.usage ? usageSummary(drafted.usage) : null,
+		outcome: "answered",
+	});
+	return { drafted, entry, costUsd };
 }
 
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }).trim();
@@ -149,16 +223,6 @@ function checksDoc(task, issueTitle, checks) {
 	return `${lines.join("\n")}\n`;
 }
 
-const runJudge = (judgeDir, checkout, outcomes) => {
-	const out = execFileSync(process.execPath, [join(judgeDir, "judge.mjs"), checkout, ...(outcomes ? ["--outcomes"] : [])], {
-		encoding: "utf8",
-		stdio: ["ignore", "pipe", "pipe"],
-		timeout: 15 * 60_000,
-		maxBuffer: 64 * 1024 * 1024,
-	});
-	return JSON.parse(out.trim().split("\n").filter(Boolean).pop());
-};
-
 /** Lines the fix added outside the tests, for the leak check. */
 function addedSourceLines(clone, base, head, files) {
 	if (!files.length) return [];
@@ -167,12 +231,41 @@ function addedSourceLines(clone, base, head, files) {
 }
 
 /**
- * Drafts one task; returns { id, dir, checks }. `model` is the drafting client ({ complete }), `github` a read-only
- * GitHub client ({ get }). Builds everything in a scratch folder and moves it into `tasksDir` only when it all works.
+ * Drafts one task; returns { id, dir, checks, usage, judgeCheck, costUsd }. `model` is the drafting client
+ * ({ complete }), `github` a read-only GitHub client ({ get }), and `openJudge` where the judge check runs
+ * (scripts/e2b-judge.mjs: openE2BJudge, or openLocalJudge in tests). `ledger` (scripts/draft-spend.mjs) bounds and
+ * counts the model call. Builds everything in a scratch folder and moves it into `tasksDir` only when it all works.
  */
-export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, tier = "exam", level = 1, model, github, cloneUrl, now = new Date(), log = () => {} }) {
+export async function draftTask({
+	candidate,
+	tasksDir,
+	modelId = DEFAULT_MODEL,
+	tier = "exam",
+	level = 1,
+	effort = DEFAULT_EFFORT,
+	maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS,
+	model,
+	github,
+	openJudge,
+	ledger,
+	refusedDir,
+	cloneUrl,
+	now = new Date(),
+	log = () => {},
+}) {
 	if (!["exam", "check"].includes(tier)) throw new Error(`--tier must be exam or check, not ${tier}`);
 	if (!Number.isInteger(level) || level < 1) throw new Error(`--level must be a whole number from 1, not ${level}`);
+	if (!EFFORTS.includes(effort)) throw new Error(`--effort must be ${EFFORTS.join(" or ")}, not ${effort}`);
+	if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1) throw new Error(`--max-output-tokens must be a whole number from 1, not ${maxOutputTokens}`);
+	if (typeof openJudge !== "function") throw new Error("draftTask needs openJudge: where the judge check runs (scripts/e2b-judge.mjs)");
+	if (ledger) {
+		// Before any sandbox starts: the model call could not be made, so the judge check would be wasted.
+		const least = maxCallUsd(modelId, { inputBytes: Buffer.byteLength(REQUEST_INSTRUCTIONS), maxOutputTokens });
+		if (least === undefined) throw new Error(`no list price for ${modelId}, so its call cannot be bounded; nothing is drafted`);
+		const { openai } = ledger.totals();
+		if (typeof openai.capUsd !== "number") throw new SpendCapError(`no OpenAI spending cap is set in ${ledger.path}; a person sets one first (--openai-cap-usd)`);
+		if (openai.spentUsd + least > openai.capUsd + 1e-12) throw new SpendCapError(`OpenAI: $${openai.spentUsd.toFixed(4)} counted so far; one more call could cross the $${openai.capUsd.toFixed(2)} cap`);
+	}
 	const id = candidate.id;
 	if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error(`not a task id: ${id}`);
 	const target = join(tasksDir, id);
@@ -237,21 +330,37 @@ export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, 
 			...(stack === "python" && basePaths.some((p) => /^src\/[^/]+\/__init__\.py$/.test(p)) ? { pythonPath: ["src"] } : {}),
 			checks: { R1: [], R0: [] },
 		};
-		const writeConfig = () => writeFileSync(join(judgeDir, "judge.json"), `${JSON.stringify(config, null, 2)}\n`);
-		writeConfig();
-		const before = runJudge(judgeDir, join(staging, "repo"), true).outcomes ?? {};
-		const after = runJudge(judgeDir, join(staging, "reference"), true).outcomes ?? {};
-		const again = runJudge(judgeDir, join(staging, "reference"), true).outcomes ?? {};
-		const checks = chooseChecks(before, after, again);
+		const configText = () => `${JSON.stringify(config, null, 2)}\n`;
+		writeFileSync(join(judgeDir, "judge.json"), configText());
+		// From here the candidate's own code runs: in the sandbox, which is killed before the model is called.
+		const judge = await openJudge({ dir: staging, label: id, purpose: "draft-judge" });
+		let checks;
+		let onRepo;
+		let onReference;
+		let judgeCheck;
+		try {
+			// Each run is paid sandbox time, so the check stops at the first run that settles it; what it accepts is the same.
+			const before = (await judge.run("repo", { outcomes: true })).outcomes ?? {};
+			const after = (await judge.run("reference", { outcomes: true })).outcomes ?? {};
+			if (Object.keys(after).some((t) => after[t] === "pass" && before[t] !== "pass")) {
+				const again = (await judge.run("reference", { outcomes: true })).outcomes ?? {};
+				checks = chooseChecks(before, after, again);
+			} else checks = chooseChecks(before, after, after);
+			if (checks.R1.length) {
+				config.checks = { R1: checks.R1, R0: checks.R0 };
+				writeFileSync(join(judgeDir, "judge.json"), configText());
+				await judge.put("judge/judge.json", configText());
+				// The judge as a run will use it: the reference passes everything; the starting repository fails R1 and keeps R0.
+				onReference = await judge.run("reference");
+				if (onReference.requirements?.R1 === true && onReference.R0 === true && Object.values(onReference.gates ?? {}).every(Boolean)) onRepo = await judge.run("repo");
+			}
+		} finally {
+			judgeCheck = await judge.close();
+		}
+		log(`${id}: judge check ran ${judgeCheck.where === "e2b" ? `in E2B sandbox ${judgeCheck.sandboxId}` : "on this machine"}, ${judgeCheck.seconds.toFixed(1)}s, $${judgeCheck.costUsd.toFixed(4)}`);
 		if (!checks.R1.length) throw new Error(`${id}: no test fails before the fix and passes after it; not usable`);
-		config.checks = { R1: checks.R1, R0: checks.R0 };
-		writeConfig();
-
-		// The judge as a run will use it: the starting repository fails R1 and keeps R0; the reference passes everything.
-		const onRepo = runJudge(judgeDir, join(staging, "repo"), false);
-		const onReference = runJudge(judgeDir, join(staging, "reference"), false);
 		const problems = [];
-		if (onRepo.requirements?.R1 !== false || onRepo.R0 !== true) problems.push(`on repo/: R1 ${onRepo.requirements?.R1}, R0 ${onRepo.R0} (${onRepo.notes?.R0 ?? ""})`);
+		if (onRepo && (onRepo.requirements?.R1 !== false || onRepo.R0 !== true)) problems.push(`on repo/: R1 ${onRepo.requirements?.R1}, R0 ${onRepo.R0} (${onRepo.notes?.R0 ?? ""})`);
 		if (onReference.requirements?.R1 !== true || onReference.R0 !== true) problems.push(`on reference/: R1 ${onReference.requirements?.R1}, R0 ${onReference.R0}`);
 		for (const [gate, ok] of Object.entries(onReference.gates ?? {})) if (!ok) problems.push(`gate ${gate} fails on reference/: ${onReference.notes?.[`gate ${gate}`] ?? ""}`);
 		if (problems.length) throw new Error(`${id}: the judge does not validate\n  ${problems.join("\n  ")}`);
@@ -259,11 +368,27 @@ export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, 
 		// Only now the model call: the issue in, the request out.
 		const issue = await github.get(`/repos/${candidate.repo}/issues/${candidate.issue.number}`);
 		if (!issue) throw new Error(`${id}: could not read ${candidate.issue.url}`);
-		const drafted = await model.complete({ model: modelId, instructions: REQUEST_INSTRUCTIONS, input: requestInput(issue) });
+		const { drafted, entry, costUsd } = await countedCall({ model, modelId, instructions: REQUEST_INSTRUCTIONS, input: requestInput(issue), maxOutputTokens, effort, ledger, label: id });
+		const outcome = (fields) => entry && ledger.update("openai", entry, fields);
+		log(`${id}: ${drafted.model ?? modelId} answered (${drafted.status ?? "no status"}), ${drafted.usage?.input_tokens ?? "?"} input and ${drafted.usage?.output_tokens ?? "?"} output tokens${costUsd === undefined ? "" : `, $${costUsd.toFixed(5)}`}`);
+		if (drafted.status === "incomplete" || !drafted.text?.trim()) {
+			outcome({ outcome: "incomplete", why: drafted.incompleteReason ?? "no text" });
+			throw new Error(`${id}: the model's answer was cut short (${drafted.incompleteReason ?? "no text"}); raise --max-output-tokens or lower --effort`);
+		}
 		const request = `${drafted.text.trim()}\n`;
 		const sourceFiles = [...changed.keys()].filter((p) => !isTest(p) && languageOf(p) === lang);
 		const leaks = leakProblems(request, { addedLines: addedSourceLines(clone, base, head, sourceFiles), issueNumber: candidate.issue.number, prNumber: candidate.pr.number });
-		if (leaks.length) throw new Error(`${id}: the drafted request cannot be used\n  ${leaks.join("\n  ")}`);
+		if (leaks.length) {
+			let kept;
+			if (refusedDir) {
+				mkdirSync(refusedDir, { recursive: true });
+				kept = join(refusedDir, `${id}.${modelId}.md`);
+				writeFileSync(kept, `<!-- refused by draft-task's leak check:\n${leaks.map((l) => `  - ${l}`).join("\n")}\n-->\n${request}`);
+			}
+			outcome({ outcome: "refused", why: leaks, ...(kept ? { refusedDraft: kept } : {}) });
+			throw new Error(`${id}: the drafted request cannot be used\n  ${leaks.join("\n  ")}`);
+		}
+		outcome({ outcome: "drafted" });
 		writeFileSync(join(staging, "request.md"), request);
 		writeFileSync(join(judgeDir, "CHECKS.md"), checksDoc(id, issue.title, checks));
 		const title = request.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").trim().slice(0, 120) ?? issue.title;
@@ -297,7 +422,7 @@ export async function draftTask({ candidate, tasksDir, modelId = DEFAULT_MODEL, 
 		mkdirSync(tasksDir, { recursive: true });
 		cpSync(staging, target, { recursive: true });
 		log(`${id}: ${checks.R1.length} R1 checks, ${checks.R0.length} R0 checks, ${checks.left.length} left out; drafted by ${task.draftedBy}`);
-		return { id, dir: target, checks, usage: drafted.usage };
+		return { id, dir: target, checks, usage: drafted.usage, costUsd, judgeCheck };
 	} finally {
 		rmSync(scratch, { recursive: true, force: true });
 	}
@@ -312,12 +437,24 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			model: { type: "string", default: DEFAULT_MODEL },
 			tier: { type: "string", default: "exam" },
 			level: { type: "string", default: "1" },
+			effort: { type: "string", default: DEFAULT_EFFORT },
+			"max-output-tokens": { type: "string", default: String(DEFAULT_MAX_OUTPUT_TOKENS) },
+			spend: { type: "string" },
+			"openai-cap-usd": { type: "string" },
+			"e2b-cap-usd": { type: "string" },
+			// Tests with made-up repositories only: run the judge check's tests on this machine instead of in E2B.
+			"local-judge": { type: "boolean", default: false },
 		},
 	});
 	for (const name of ["candidate", "candidates", "tasks-dir"]) if (!values[name]) throw new Error(`--${name} is required`);
 	const tasksDir = resolve(values["tasks-dir"]);
 	const inside = relative(ROOT, tasksDir);
 	if (!inside.startsWith("..") && !isAbsolute(inside)) throw new Error(`exam tasks live outside this public repository; ${tasksDir} is inside it`);
+	if (!values["local-judge"] && !process.env.E2B_API_KEY) {
+		throw new Error("the judge check runs the candidate's own code, so it runs in an E2B sandbox: set E2B_API_KEY (or pass --local-judge, for tests only)");
+	}
+	const spendPath = resolve(values.spend ?? join(dirname(tasksDir), "drafting", "spend.json"));
+	const ledger = openLedger(spendPath, { caps: { openai: values["openai-cap-usd"], e2b: values["e2b-cap-usd"] } });
 	const candidate = readFileSync(resolve(values.candidates), "utf8")
 		.split("\n")
 		.filter(Boolean)
@@ -330,10 +467,29 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		modelId: values.model,
 		tier: values.tier,
 		level: Number(values.level),
+		effort: values.effort,
+		maxOutputTokens: Number(values["max-output-tokens"]),
 		model: openaiClient({ apiKey: process.env.OPENAI_API_KEY }),
 		github: githubClient({ token: process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN }),
+		openJudge: values["local-judge"] ? openLocalJudge : (options) => openE2BJudge({ ...options, ledger, log: (line) => console.log(line) }),
+		ledger,
+		refusedDir: join(dirname(spendPath), "refused"),
 		log: (line) => console.log(line),
-	});
+	})
+		.catch((error) => {
+			// A cap reached is not a broken candidate: exit 3, so a loop over candidates knows to stop.
+			if (error instanceof SpendCapError) {
+				console.error(`spend cap: ${error.message}`);
+				process.exitCode = 3;
+				return null;
+			}
+			throw error;
+		})
+		.finally(() => {
+			const t = ledger.totals();
+			console.log(`spend so far (${spendPath}): OpenAI $${t.openai.spentUsd.toFixed(4)} of $${t.openai.capUsd ?? "no cap"}, E2B $${t.e2b.spentUsd.toFixed(4)} of $${t.e2b.capUsd ?? "no cap"}`);
+		});
+	if (!result) process.exit();
 	console.log(`drafted ${result.dir}; next: node scripts/validate-task.mjs --tasks-dir ${values["tasks-dir"]} ${result.id}`);
 	if (result.usage) console.log(`model usage: ${result.usage.input_tokens ?? "?"} input, ${result.usage.output_tokens ?? "?"} output tokens`);
 }

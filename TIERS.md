@@ -53,7 +53,9 @@ How one exam task is made, in order:
    that passed on both. Then a model from a different family than the one being improved (OpenAI) writes `request.md`
    from the issue alone: it never sees the fix, its instructions forbid saying how to fix it, and a draft that still
    repeats a line of the fix, or names the issue or pull request, is refused. The judge is checked before the model is
-   called, so a candidate that cannot be judged costs nothing.
+   called, so a candidate that cannot be judged costs no model call. That check runs the candidate's own tests, someone
+   else's code, so it runs in an E2B sandbox with no keys, never on the drafting machine. Every model call and sandbox
+   is bounded before it starts and counted against its cap in the drafting ledger beside the exam.
 3. **Validated** with `scripts/validate-task.mjs --tasks-dir`, like every task: the judge fails the untouched repository
    and passes the reference.
 4. **Approved.** A founder reads the task on the exam's review page (`scripts/build-review-page.mjs --tasks-dir`, a
