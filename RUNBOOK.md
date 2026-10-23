@@ -198,6 +198,24 @@ node scripts/ledger.mjs trend --quarter 2026-Q4
 Then commit and push `ledger/ledger.json`. A release whose champion is not the ledger's last release needs
 `--chain-start`, which the entry records.
 
+### A new model: model watch
+
+When Relay's catalogue lists a new model, Relay (with `RELAY_MODEL_WATCH=1`, harness D-93) does not route to it until
+the exam has passed it. The exam gate runs with the new model as the candidate (the champion's release with the model
+on every tier, or on `--tier`) against the champion as it is (GATE.md, amendment 3). A dry run is the default:
+
+```
+node scripts/model-watch.mjs --model anthropic/claude-sonnet-6            # the plan, the runs, the most it could cost
+node scripts/model-watch.mjs --model anthropic/claude-sonnet-6 --spend-cap 60   # PAID: runs the gate's next look
+```
+
+It reads the champion and its model from the ledger's last entry (or `--champion` and `--champion-model`), the exam
+from `../relay-exam` and its newest anchor set. A paid run is refused when the meter has no price for the new model:
+add its list price to `PRICES` in `meter/meter.mjs` first. Run the same command for each look until the gate decides.
+Then it writes the result as a small hashed file, `../relay-exam/runs/model-watch/<test>.exam.json`, and a copy in
+`~/.relay/agent/model-watch/exams/` (`--relay-dir` for another machine's folder, `none` to skip), where Relay reads it:
+a PASS lets routing use the model, anything else keeps it out. A model's exam never goes in the ledger.
+
 ## Growing the exam
 
 **Not yet run.** Every command below is built and tested on recorded and made-up data only. TIERS.md says how a task is

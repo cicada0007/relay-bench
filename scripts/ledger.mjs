@@ -23,6 +23,7 @@ import { parseArgs } from "node:util";
 import { loadRecords } from "../runner/analyze.mjs";
 import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
 import { loadPin, pinFingerprint, pinPathFor, pinProblems } from "../runner/pins.mjs";
+import { parseModelArm } from "../runner/arms.mjs";
 import { gate } from "../runner/gate-analyze.mjs";
 import { flagSummary } from "../runner/safety.mjs";
 import { tInv } from "../runner/sequential.mjs";
@@ -33,7 +34,7 @@ export const SCHEMA = 1;
 
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 /** JSON with keys in sorted order, so a hash does not depend on how an object was built. */
-function canonical(value) {
+export function canonical(value) {
 	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
 	if (value && typeof value === "object") {
 		return `{${Object.keys(value)
@@ -90,6 +91,7 @@ export function regate({ state, records, anchors, pinned = null }) {
 export function writeProblems({ state, result, records, ledger, signers, chainStart = false }) {
 	const problems = ledgerProblems(ledger).map((p) => `the ledger itself: ${p}`);
 	if (!state) return [...problems, "no gate state (<test>.looks.json): the gate never looked"];
+	if (parseModelArm(state.candidate.split("@")[1])) problems.push("this gate examined a model, not a release: model watch records it (scripts/model-watch.mjs), and the ledger holds releases only");
 	if (/^(pilot|dev)/.test(state.test)) problems.push(`${state.test} is a pilot or dev test, not a counted gate`);
 	if (state.tier !== "exam") problems.push(`the gate ran on the ${state.tier} tier; only a gate on the exam lets a release be signed (TIERS.md)`);
 	if (!state.decided) problems.push("the gate has not decided");

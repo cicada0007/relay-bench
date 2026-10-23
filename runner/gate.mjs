@@ -20,6 +20,9 @@
 // On the exam and check tiers every look is counted against the leak budget (runner/exposure.mjs), and every run must
 // have been graded by the judges pinned for the candidate (runner/pins.mjs; --run pins them at the first look).
 //
+// Model watch (scripts/model-watch.mjs): --candidate 0.6.121+all+claude-sonnet-6 judges the champion's release with a
+// new model on a tier (or on every tier) against the champion as it is.
+//
 // --dry-run with --run lists the runs it would start and spends nothing.
 // State: <out>/<test>.looks.json (the design, the task order, every look taken), <out>/<test>.gate.json (the last look).
 // Exit codes: 0 PASS, 10 BLOCK, 20 UNRESOLVED (GATE.md).
@@ -29,7 +32,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { loadRecords, rng, SEED } from "./analyze.mjs";
 import { anchorProblems, loadAnchors } from "./anchors.mjs";
-import { RELAY_VERSION_PATTERN } from "./arms.mjs";
+import { parseModelArm, RELAY_VERSION_PATTERN } from "./arms.mjs";
 import { budgetProblems, exposurePathFor, loadBudget, readExposures, recordExposure, SEALED } from "./exposure.mjs";
 import { combinedProblems, designProblems, EXIT, FIXED_DESIGN, gate, lookSize, RULES, sharedTasks } from "./gate-analyze.mjs";
 import { loadPin, makePin, pinFingerprint, pinPathFor, pinProblems, writePin } from "./pins.mjs";
@@ -65,7 +68,10 @@ const { values: args } = parseArgs({
 });
 for (const name of ["test", "champion", "candidate"]) if (!args[name]) throw new Error(`--${name} is required`);
 for (const name of ["champion", "candidate"]) {
-	if (!RELAY_VERSION_PATTERN.test(args[name])) throw new Error(`--${name} must be a released Relay version, such as 0.6.121`);
+	// Model watch: the candidate may be the champion's release with a new model on a tier, 0.6.121+all+claude-sonnet-6.
+	if (!RELAY_VERSION_PATTERN.test(args[name]) && !(name === "candidate" && parseModelArm(args[name]))) {
+		throw new Error(`--${name} must be a released Relay version, such as 0.6.121${name === "candidate" ? ", or one with a model on a tier, such as 0.6.121+all+claude-sonnet-6" : ""}`);
+	}
 }
 if (args.champion === args.candidate) throw new Error("--champion and --candidate are the same version");
 const champion = `relay@${args.champion}`;
