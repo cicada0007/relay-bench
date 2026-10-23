@@ -17,7 +17,8 @@
 //   --anchors <file>   the anchor set scored with every release (runner/anchors.mjs); required for a counted exam gate.
 //   --combined <file>  a combined candidate: { "release": "<candidate>", "lanes": [{ "lane": "...", "change": "..." }] },
 //                      several lane changes judged as one release, once.
-// On the exam and check tiers every look is counted against the leak budget (runner/exposure.mjs).
+// On the exam and check tiers every look is counted against the leak budget (runner/exposure.mjs), and every run must
+// have been graded by the judges pinned for the candidate (runner/pins.mjs; --run pins them at the first look).
 //
 // --dry-run with --run lists the runs it would start and spends nothing.
 // State: <out>/<test>.looks.json (the design, the task order, every look taken), <out>/<test>.gate.json (the last look).
@@ -31,6 +32,7 @@ import { anchorProblems, loadAnchors } from "./anchors.mjs";
 import { RELAY_VERSION_PATTERN } from "./arms.mjs";
 import { budgetProblems, exposurePathFor, loadBudget, readExposures, recordExposure, SEALED } from "./exposure.mjs";
 import { combinedProblems, designProblems, EXIT, FIXED_DESIGN, gate, lookSize, RULES, sharedTasks } from "./gate-analyze.mjs";
+import { loadPin, makePin, pinFingerprint, pinPathFor, pinProblems, writePin } from "./pins.mjs";
 import { readTasks, selectTasks } from "./stage-tasks.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -177,9 +179,16 @@ function taskOrder() {
 	return order.slice(0, planned);
 }
 
+/** The candidate's pinned graders, on the sealed tiers: made at the first --run (not a dry run), read otherwise. */
+const pinPath = sealed ? pinPathFor(dir, args.candidate) : null;
+
 if (args.run) {
 	if (state.decided) throw new Error(`this gate stopped at look ${state.decided.look} with ${state.decided.status} (${state.decided.label}); nothing was run`);
 	for (const name of ["model", "cap-usd", "stage-cap-usd", "e2b-cap-usd"]) if (!args[name]) throw new Error(`--run needs --${name}`);
+	if (sealed && !args["dry-run"] && !existsSync(pinPath)) {
+		writePin(pinPath, makePin({ tasksDir: dir, release: args.candidate }));
+		console.log(`pinned the graders for ${args.candidate}: ${pinPath}`);
+	}
 	if (!state.order) {
 		state.order = taskOrder();
 		if (state.design.plannedTasks == null) state.design = { ...state.design, plannedTasks: state.order.length };
@@ -270,12 +279,21 @@ if (sealed) {
 	exposure = { problems: budgetProblems({ entries: readExposures(exposurePathFor(dir)), add: reads, budget: loadBudget(dir) }) };
 }
 
-const result = gate(records, { champion, candidate, design, history, anchors, combined, exposure });
+let pin = null;
+if (sealed && counted) {
+	if (!existsSync(pinPath)) throw new Error(`no graders are pinned for ${args.candidate}; pin them before its gate: node scripts/pin-graders.mjs --release ${args.candidate} --tasks-dir ${dir}`);
+	const pinned = loadPin(pinPath);
+	const inLook = new Set(shared);
+	pin = { release: pinned.release, fingerprint: pinFingerprint(pinned), problems: pinProblems(records.filter((r) => inLook.has(r.task)), pinned) };
+}
+
+const result = gate(records, { champion, candidate, design, history, anchors, combined, exposure, pin });
 const refused = Boolean(result.exposure?.problems?.length || result.pin?.problems?.length);
 if (planned && result.look && !refused && !again) {
 	for (const e of reads) recordExposure(exposurePathFor(dir), e);
 	const at = new Date().toISOString();
-	state.looks.push({ index, tasks: n, fraction: result.look.fraction, z: result.look.z, spent: result.look.spent, status: result.status, label: result.label, at });
+	// The look's own tasks are kept, so the ledger can read the same look again from the records (scripts/ledger.mjs).
+	state.looks.push({ index, tasks: n, taskSet: shared, fraction: result.look.fraction, z: result.look.z, spent: result.look.spent, status: result.status, label: result.label, at });
 	if (result.final) state.decided = { status: result.status, label: result.label, look: index, at };
 	saveState();
 }

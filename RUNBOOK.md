@@ -174,13 +174,29 @@ On the exam tier, pass `--tier exam --tasks-dir ../relay-exam/tasks --out ../rel
 refuses a tasks folder inside this repository, and refuses to write exam runs inside it. Every run and every look is
 counted against the leak budget (`../relay-exam/exposure.jsonl`; lower it in `../relay-exam/leak-budget.json`). Lock
 the exam first with `node scripts/lock-tasks.mjs --tasks-dir ../relay-exam/tasks`; an exam task that is not approved
-stops a counted gate. Make the anchor set once, from locked tasks:
+stops a counted gate. The first `--run` pins the exam's graders for the candidate (`../relay-exam/pins/<version>.json`),
+and every later look refuses runs graded by another judge. Make the anchor set once, from locked tasks:
 `node scripts/anchors.mjs create --version anchors-v1 --tasks-dir ../relay-exam/tasks --sample 40`.
 
 Several lane changes released together are judged as one candidate with `--combined lanes.json`, a file
 `{ "release": "0.6.122-beta.3", "lanes": [{ "lane": "prompts", "change": "<commit>" }, ...] }`.
 
 Check the gate's own false-accept rates, free: `node runner/gate-null.mjs --sims 20000` (several minutes).
+
+### Signing a release into the ledger
+
+A release that passed the gate on the exam goes in the compound ledger (GATE.md, amendment 2) once a founder signs it.
+The command reads the gate again from its records and writes nothing unless that gives PASS:
+
+```
+node scripts/ledger.mjs write --test gate-0.6.122 --out ../relay-exam/runs/gate --tasks-dir ../relay-exam/tasks \
+  --anchors ../relay-exam/anchors/anchors-v1.json --signed-by <your name>
+node scripts/ledger.mjs verify
+node scripts/ledger.mjs trend --quarter 2026-Q4
+```
+
+Then commit and push `ledger/ledger.json`. A release whose champion is not the ledger's last release needs
+`--chain-start`, which the entry records.
 
 ## Growing the exam
 
@@ -248,6 +264,29 @@ What it needs, in the environment (never on the command line):
    ```
 
    Fix a flagged judge for every tool alike, then grade its runs again with `runner/rejudge.mjs`.
+
+### The living exam, every week
+
+**Not yet run.** One command runs the week's steps (TIERS.md, "The living exam") and stops before anything paid:
+
+```
+node scripts/living-exam.mjs --exam ../relay-exam --cutoff 2026-07-01 \
+  --records ../relay-exam/runs/gate/records.jsonl --tool relay@0.6.121
+```
+
+It prints one line per step: ran, skipped (and why), or stopped. Add `--mine` to search GitHub first (needs
+`GITHUB_TOKEN`; leave it out while another miner is running). When it stops at drafting, it says how many candidates
+wait and the most they could cost. Drafting needs a founder's yes and `OPENAI_API_KEY` in the environment:
+
+```
+node scripts/living-exam.mjs --exam ../relay-exam --cutoff 2026-07-01 --spend-cap 2
+```
+
+Then approve each queued task on the review page (step 4 above) and run `--from approve` to lock what was approved. The
+queues are in `../relay-exam/queue/`. To scan candidates without the pipeline:
+`node scripts/contamination.mjs --exam ../relay-exam --cutoff 2026-07-01`. To ask the check tier its one question:
+`node scripts/check-query.mjs --out ../relay-exam/runs/check --test <test> --champion <version> --candidate <version>
+--tasks-dir ../relay-exam/tasks` (prints pass or fail; exit 0, 1, or 2 when refused).
 
 ## The bar: five tools on the exam
 

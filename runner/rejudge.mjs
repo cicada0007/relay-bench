@@ -8,7 +8,7 @@
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { judgeResult, scoreOf } from "./judge.mjs";
+import { judgeResult, scoreOf, treeHash } from "./judge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const { values: args } = parseArgs({
@@ -45,9 +45,11 @@ await Promise.all(
 			const record = queue.shift();
 			const graded = await judgeResult(readFileSync(join(out, record.runId, "result.tgz")), taskDir, `${record.runId}-rejudge`);
 			const { score, saidDoneButFailed } = scoreOf(task, graded.judge, record.saidDone);
+			// The judge's content fingerprint, the same as TASKS.lock.json's, so a release's pinned graders can be checked.
+			const judgeTreeHash = treeHash(join(taskDir, "judge"));
 			appendFileSync(
 				join(out, "rejudged.jsonl"),
-				`${JSON.stringify({ runId: record.runId, rejudgedAt: new Date().toISOString(), reason: args.reason, ...graded, score, saidDoneButFailed })}\n`,
+				`${JSON.stringify({ runId: record.runId, rejudgedAt: new Date().toISOString(), reason: args.reason, ...graded, judgeTreeHash, score, saidDoneButFailed })}\n`,
 			);
 			console.log(`${record.runId}: ${record.score?.requirementsMet}/${task.requirements.length} -> ${score.requirementsMet}/${task.requirements.length}`);
 		}

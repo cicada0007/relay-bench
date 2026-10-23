@@ -8,7 +8,7 @@ the exam lets a founder sign a release.
 | Tier | Where the tasks live | What the improving agent may see | Today |
 | --- | --- | --- | --- |
 | Practice | this repository's `tasks/` folder, and Terminal-Bench 2.1's public set | everything: tasks, runs, judges' results | 24 tasks and 89 |
-| Check | the private exam repository, tasks marked `"tier": "check"` | pass or fail only | none yet |
+| Check | the private exam repository, tasks marked `"tier": "check"` | pass or fail only, through `scripts/check-query.mjs` | none yet |
 | Exam | the private exam repository, tasks marked `"tier": "exam"` | nothing at all | none yet |
 
 ## The exam's rules
@@ -62,11 +62,52 @@ How one exam task is made, in order:
 5. **Locked.** `scripts/lock-tasks.mjs --tasks-dir` records each task's fingerprints and who approved it. A counted run
    refuses an exam or check task that is not approved, approved by its own drafter, or changed since the lock.
 
+## The living exam
+
+The exam gets harder by itself. New post-cutoff tasks come in every week, and a harder level opens when one is passed
+90% of the time. Relay proposes tasks; people approve them; Relay never grades its own exam. **Not yet run**, like the
+tools above: everything here is tested on made-up data only.
+
+- **Every week, one command.** `scripts/living-exam.mjs` runs the steps above in order: mine, filter, contamination
+  scan, draft queue, approval queue, lock, and saturation. Each step runs only when its inputs exist and says why when
+  they do not. Mining runs only when asked (`--mine`), since another miner may already be adding candidates, and with
+  the miner's usual command line. Drafting is the one paid step. Without `--spend-cap` the pipeline stops before it and
+  says what is waiting and the most it could cost. With a cap it drafts while its estimate ($0.05 a candidate) fits.
+  Approving is a person's: the pipeline only queues the tasks and builds the local review page.
+- **The contamination scan.** `scripts/contamination.mjs` checks every candidate before drafting, and every drafted
+  task again before approval, against everything the improving loop can see. That covers every file tracked in this
+  public repository (fixtures, results and reviews included), the practice tasks, and every task the exam holds or has
+  retired. It also compares candidates with each other. A candidate is rejected, with its reasons, when any of these
+  hold:
+  - it is the same pull request or issue as one seen before;
+  - its issue or pull request is named anywhere in that text;
+  - its repository is the source of a practice task or a public fixture;
+  - most of its 5-word runs appear in one visible document (containment or Jaccard of 0.5 or more);
+  - its issue opened, or its fix merged, on or before the training cutoff, or it was mined with an earlier cutoff.
+- **The check tier's one door.** `scripts/check-query.mjs` answers one question, did this candidate pass the gate on the
+  check tasks, with one word: pass or fail. Every new answer is one read of each check task it covers, counted against
+  the leak budget (GATE.md, amendment 1). Past the budget it answers nothing.
+- **Saturation.** `scripts/saturation.mjs` reads the champion's latest 50 runs per tier and level. When at least 90% of
+  them meet every requirement, the level no longer tells releases apart. It is flagged, and `queue/harder.json` opens
+  the next level's draft queue. A level is a band of change size. Level 1 is anything the miner keeps. Level 2 is at
+  least 120 changed lines over at least 2 source files. Level 3 is at least 250 lines over at least 4 files.
+  Candidates of a level that is not open yet wait in the queue. `scripts/draft-task.mjs --level` records the level in
+  `task.json`.
+- **Graders pinned per release.** Before a release's gate on the exam, every locked task's judge fingerprint is written
+  under the release's id (`pins/<release>.json`, by `runner/gate.mjs --run` or `scripts/pin-graders.mjs`). A judge
+  fixed later still grades every tool's runs again. But the release's gate refuses any run graded by a judge other than
+  its pinned one, so a release is never judged by a grader that did not exist when it was gated. `runner/rejudge.mjs`
+  records each re-grade's judge fingerprint for this.
+
+Everything the pipeline writes goes beside the exam, in `queue/`: the filtered, scanned, clean, waiting, rejected and
+approval lists, and the saturation readings.
+
 An exam task's `task.json` has the fields of TASK_FORMAT.md plus:
 
 | Field | What it holds |
 | --- | --- |
 | `tier` | `"exam"` or `"check"` |
+| `level` | the size band it was mined in, 1 to 3 (scripts/saturation.mjs) |
 | `draftedBy` | who wrote the request: `openai/<the model id the API reported>` |
 | `draftedAt` | when |
 | `source` | the issue and pull request URLs, the base and head commits used, the license, and the issue's and merge's dates |
