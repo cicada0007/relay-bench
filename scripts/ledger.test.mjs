@@ -2,6 +2,7 @@
 // records still show it; it is numbers only; its chain shows any later change; its trend adds the anchors' gains.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -188,4 +189,46 @@ test("only people sign", () => {
 	for (const name of ["relay", "Claude Opus 5.5", "openai/gpt-6.1-sol", "dependabot[bot]", "codex", "", "an agent"]) assert.ok(signerProblems([name]).length, name);
 	assert.match(signerProblems(["arnav", "Arnav"]).join(), /signs twice/);
 	assert.match(signerProblems([]).join(), /founder's signature/);
+});
+
+test("a local build's entry keeps its package's hash, and the next entry follows it through the release that shipped it", () => {
+	const e = exam();
+	JUDGES = e.judges;
+	const pkg = join(e.root, "relay-worker.tgz");
+	writeFileSync(pkg, "a made-up build");
+	const sha = createHash("sha256").update("a made-up build").digest("hex");
+	const built = (test, champion, version, cand) => {
+		writePin(pinPathFor(e.tasks, version), makePin({ tasksDir: e.tasks, release: version }));
+		const lines = [];
+		for (let i = 0; i < 100; i++) {
+			const task = `t${String(i).padStart(3, "0")}`;
+			lines.push(JSON.stringify({ runId: `${test}-${task}-c`, test, task, taskKind: "everyday", tool: `relay@${champion}`, model: "gpt-6-luna", rep: 1, score: { share: 0.2 }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes: { judge: JUDGES[task] } }));
+			lines.push(JSON.stringify({ runId: `${test}-${task}-b`, test, task, taskKind: "everyday", tool: `relay@${version}`, model: "gpt-6-luna", rep: 1, score: { share: cand(i) }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes: { judge: JUDGES[task] }, relayPackageSha256: sha, relayPackageVersion: version }));
+		}
+		mkdirSync(e.out, { recursive: true });
+		appendFileSync(join(e.out, "records.jsonl"), `${lines.join("\n")}\n`);
+		return runGate(e, test, champion, version, { extra: ["--candidate-package", pkg] });
+	};
+	assert.equal(built("gate-0.6.122-loop.2026w44", "0.6.121", "0.6.122-loop.2026w44", (i) => (i < 20 ? 0.3 : 0.8)).status, 0);
+	assert.equal(write(e, "gate-0.6.122-loop.2026w44").status, 0);
+	const first = JSON.parse(readFileSync(e.ledger, "utf8")).entries[0];
+	assert.equal(first.release, "0.6.122-loop.2026w44");
+	assert.deepEqual(first.build, { sha256: sha });
+
+	// 0.6.122 is the release that shipped that build; the next build is measured against it.
+	assert.equal(built("gate-0.6.123-loop.2026w45", "0.6.122", "0.6.123-loop.2026w45", (i) => (i < 20 ? 0.4 : 0.8)).status, 0);
+	assert.match(write(e, "gate-0.6.123-loop.2026w45").stderr, /pass --follows 0\.6\.122-loop\.2026w44 when 0\.6\.122 is the release that shipped it/);
+	assert.match(write(e, "gate-0.6.123-loop.2026w45", "--follows", "0.6.121").stderr, /--follows names a local build that a release shipped/);
+	assert.match(write(e, "gate-0.6.123-loop.2026w45", "--follows", "0.6.121-loop.2026w40").stderr, /--follows 0\.6\.121-loop\.2026w40, but the ledger's last release is 0\.6\.122-loop\.2026w44/);
+	assert.match(write(e, "gate-0.6.123-loop.2026w45", "--follows", "0.6.122-loop.2026w44", "--chain-start").stderr, /pass one of them/);
+	const ok = write(e, "gate-0.6.123-loop.2026w45", "--follows", "0.6.122-loop.2026w44");
+	assert.equal(ok.status, 0, ok.stderr);
+	const ledger = JSON.parse(readFileSync(e.ledger, "utf8"));
+	assert.equal(ledger.entries[1].follows, "0.6.122-loop.2026w44");
+	assert.deepEqual(ledgerProblems(ledger), []);
+	assert.deepEqual(trend(ledger.entries, { from: "0000-01-01", to: "9999-12-31" }).chainBreaks, []);
+	assert.equal(node([LEDGER, "verify", "--ledger", e.ledger]).status, 0);
+	const forged = structuredClone(ledger);
+	forged.entries[1].follows = "0.6.121";
+	assert.match(ledgerProblems(forged).join("; "), /entry 2 follows 0\.6\.121, which is not the entry before it/);
 });

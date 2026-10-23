@@ -178,17 +178,32 @@ export function combinedProblems(manifest, candidateVersion) {
 }
 
 /**
+ * Why the candidate's graded runs are not all of one local build (GATE.md, amendment 4): each must have installed the
+ * package whose SHA-256 the gate fixed at its first look, and printed the build's version. Empty when they are.
+ */
+export function buildProblems(records, candidate, { version, sha256 }) {
+	const problems = [];
+	for (const r of records) {
+		if (r.tool !== candidate || typeof r.score?.share !== "number") continue;
+		if (r.relayPackageSha256 !== sha256) problems.push(`${r.runId ?? r.task}: its package is ${String(r.relayPackageSha256 ?? "none").slice(0, 12)}, not ${sha256.slice(0, 12)}`);
+		else if (!String(r.relayPackageVersion ?? "").includes(version)) problems.push(`${r.runId ?? r.task}: it printed ${r.relayPackageVersion ?? "no version"}, not ${version}`);
+	}
+	return problems;
+}
+
+/**
  * The verdict for one look. `records` are run records (runner/run-one.mjs); `champion` and `candidate` are the two
  * arms' tool names, such as "relay@0.6.121" and "relay@0.6.122-beta.3". Options:
  * - `design` and `history`: the sequential design and the information fractions of earlier looks (none: one look);
  * - `anchors`: { version, fingerprint, ids } of the anchor set scored with every release;
  * - `combined`: the candidate's manifest of lane changes, judged as one release (combinedProblems first);
  * - `exposure`: { problems } from the leak budget (runner/exposure.mjs): any problem stops a verdict;
- * - `pin`: { release, fingerprint, problems } from the release's pinned graders: any problem stops a verdict.
+ * - `pin`: { release, fingerprint, problems } from the release's pinned graders: any problem stops a verdict;
+ * - `build`: { version, sha256, problems } for a local build (amendment 4, buildProblems): any problem stops a verdict.
  */
 export function gate(
 	records,
-	{ champion, candidate, rules = RULES, design = FIXED_DESIGN, history = [], anchors = null, combined = null, exposure = null, pin = null },
+	{ champion, candidate, rules = RULES, design = FIXED_DESIGN, history = [], anchors = null, combined = null, exposure = null, pin = null, build = null },
 ) {
 	const champ = byTask(records, champion);
 	const cand = byTask(records, candidate);
@@ -244,6 +259,7 @@ export function gate(
 		safety,
 		exposure: exposure ? { problems: exposure.problems ?? [] } : null,
 		pin: pin ? { release: pin.release ?? null, fingerprint: pin.fingerprint ?? null, problems: pin.problems ?? [] } : null,
+		build: build ? { version: build.version ?? null, sha256: build.sha256 ?? null, problems: build.problems ?? [] } : null,
 	};
 	const verdict = (status, reason, label, extra = {}) => ({
 		status,
@@ -269,6 +285,9 @@ export function gate(
 	}
 	if (pin?.problems?.length) {
 		return verdict("UNRESOLVED", `graders differ from the ones pinned for this release: ${pin.problems.slice(0, 3).join("; ")}`, "graders not pinned", { stopped: true });
+	}
+	if (build?.problems?.length) {
+		return verdict("UNRESOLVED", `the candidate's runs are not all of the build this gate judges: ${build.problems.slice(0, 3).join("; ")}`, "build differs", { stopped: true });
 	}
 	if (shared.length < rules.minTasks) {
 		return verdict("UNRESOLVED", `only ${shared.length} tasks have a grade for both; the gate needs ${rules.minTasks}`, "too few tasks");

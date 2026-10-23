@@ -52,7 +52,8 @@ if (!resolved) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(
 const { arm } = resolved;
 if (resolved.relayPackage && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package");
 if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
-if (args["relay-package"] && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only");
+// A counted run takes a package only for a local build the gate judges (GATE.md, amendment 4), never for relay@pkg.
+if (args["relay-package"] && !resolved.localBuild && !/^(pilot|dev)/.test(args.test)) throw new Error("--relay-package is for pilot and dev runs only, or a local build's gate");
 const provider = providerOf(args.model);
 if (!armRuns(arm, args.model)) throw new Error(`${args.tool} does not run ${provider} models such as ${args.model}`);
 // A model arm (model watch): its model gets the run's one key, so it is of the same provider, and the meter must price
@@ -200,6 +201,10 @@ try {
 		);
 		if (installed.exitCode !== 0) throw new Error(`installing the Relay package failed: ${installed.stderr.slice(-400)}`);
 		record.relayPackageVersion = installed.stdout.trim().split("\n").pop();
+		// A local build is judged by its version: the package must be the build its name gives.
+		if (resolved.localBuild && !record.relayPackageVersion.includes(resolved.localBuild)) {
+			throw new Error(`the Relay package printed ${record.relayPackageVersion}, not the local build ${resolved.localBuild}`);
+		}
 	}
 	// A gate arm (GATE.md): this run's Relay is the released version its name gives, installed by Relay's own installer.
 	if (resolved.relayVersion) {

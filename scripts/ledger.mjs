@@ -4,15 +4,16 @@
 // quarter's trend shows whether Relay really gets better week by week (GATE.md, "The compound ledger").
 //
 //   node scripts/ledger.mjs write --test gate-0.6.122 --out ../relay-exam/runs/gate --tasks-dir ../relay-exam/tasks \
-//     --anchors ../relay-exam/anchors/anchors-v1.json --signed-by <founder>[,<founder>] [--chain-start]
+//     --anchors ../relay-exam/anchors/anchors-v1.json --signed-by <founder>[,<founder>] [--chain-start | --follows <release>]
 //   node scripts/ledger.mjs trend [--quarter 2026-Q4 | --from 2026-10-01 --to 2026-12-31] [--json]
 //   node scripts/ledger.mjs verify
 //
 // `write` never trusts a verdict file. It reads the gate's kept looks (<out>/<test>.looks.json) and the run records,
 // computes the deciding look again with the gate's own code, and writes only when that gives PASS. It refuses a gate
 // that did not stop with PASS, a gate off the exam, a pilot or dev test, a release already in the ledger, a release whose
-// champion is not the ledger's last release (unless --chain-start), any safety flag on the candidate's runs, and a
-// signer who looks like a model or an agent: Relay never signs its own release.
+// champion is not the ledger's last release (unless --chain-start, or --follows: the champion is the release that shipped
+// the last entry's local build, GATE.md amendment 4), any safety flag on the candidate's runs, and a signer who looks
+// like a model or an agent: Relay never signs its own release. A local build's entry keeps its package's SHA-256.
 //
 // The ledger is public and numbers only: no task names (the anchors appear by fingerprint), no words for results.
 // --ledger <file> reads or writes another ledger file (the tests use one).
@@ -23,8 +24,8 @@ import { parseArgs } from "node:util";
 import { loadRecords } from "../runner/analyze.mjs";
 import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
 import { loadPin, pinFingerprint, pinPathFor, pinProblems } from "../runner/pins.mjs";
-import { parseModelArm } from "../runner/arms.mjs";
-import { gate } from "../runner/gate-analyze.mjs";
+import { isLocalBuild, parseModelArm } from "../runner/arms.mjs";
+import { buildProblems, gate } from "../runner/gate-analyze.mjs";
 import { flagSummary } from "../runner/safety.mjs";
 import { tInv } from "../runner/sequential.mjs";
 
@@ -84,11 +85,12 @@ export function regate({ state, records, anchors, pinned = null }) {
 	const combined = state.combined ? { release: state.candidate.split("@")[1], lanes: state.combined } : null;
 	const used = records.filter((r) => tasks.has(r.task));
 	const pin = pinned ? { release: pinned.release, fingerprint: pinFingerprint(pinned), problems: pinProblems(used, pinned) } : null;
-	return gate(used, { champion: state.champion, candidate: state.candidate, design: state.design, history, anchors, combined, pin });
+	const build = state.candidatePackage ? { ...state.candidatePackage, problems: buildProblems(used, state.candidate, state.candidatePackage) } : null;
+	return gate(used, { champion: state.champion, candidate: state.candidate, design: state.design, history, anchors, combined, pin, build });
 }
 
 /** Why this gate cannot go in the ledger; empty when it can. */
-export function writeProblems({ state, result, records, ledger, signers, chainStart = false }) {
+export function writeProblems({ state, result, records, ledger, signers, chainStart = false, follows = null }) {
 	const problems = ledgerProblems(ledger).map((p) => `the ledger itself: ${p}`);
 	if (!state) return [...problems, "no gate state (<test>.looks.json): the gate never looked"];
 	if (parseModelArm(state.candidate.split("@")[1])) problems.push("this gate examined a model, not a release: model watch records it (scripts/model-watch.mjs), and the ledger holds releases only");
@@ -107,13 +109,16 @@ export function writeProblems({ state, result, records, ledger, signers, chainSt
 	const champion = state.champion.split("@")[1];
 	if (ledger.entries.some((e) => e.release === release)) problems.push(`${release} is already in the ledger`);
 	const last = ledger.entries.at(-1);
-	if (last && last.release !== champion && !chainStart) problems.push(`the ledger's last release is ${last.release}, but this gate's champion is ${champion}; pass --chain-start to begin a new chain`);
+	if (chainStart && follows) problems.push("--chain-start begins a new chain and --follows continues one; pass one of them");
+	if (follows && !isLocalBuild(follows)) problems.push(`--follows names a local build that a release shipped, such as 0.6.122-loop.2026w44, not ${follows}`);
+	else if (follows && last?.release !== follows) problems.push(`--follows ${follows}, but the ledger's last release is ${last?.release ?? "none"}`);
+	if (last && last.release !== champion && !chainStart && follows !== last.release) problems.push(`the ledger's last release is ${last.release}, but this gate's champion is ${champion}; pass --follows ${last.release} when ${champion} is the release that shipped it, or --chain-start to begin a new chain`);
 	problems.push(...signerProblems(signers));
 	return problems;
 }
 
 /** The entry for one gated release, numbers only. */
-export function entryFor({ state, result, records, signers, chainStart = false, now = new Date() }) {
+export function entryFor({ state, result, records, signers, chainStart = false, follows = null, now = new Date() }) {
 	const tasks = new Set(state.looks.find((l) => l.index === state.decided.look).taskSet);
 	const used = records.filter((r) => tasks.has(r.task) && typeof r.score?.share === "number");
 	const models = [...new Set(used.map((r) => r.model).filter(Boolean))].sort();
@@ -122,6 +127,8 @@ export function entryFor({ state, result, records, signers, chainStart = false, 
 		release: state.candidate.split("@")[1],
 		champion: state.champion.split("@")[1],
 		...(chainStart ? { chainStart: true } : {}),
+		...(follows ? { follows } : {}),
+		...(state.candidatePackage ? { build: { sha256: state.candidatePackage.sha256 } } : {}),
 		date: state.decided.at.slice(0, 10),
 		decidedAt: state.decided.at,
 		test: state.test,
@@ -167,7 +174,8 @@ export function ledgerProblems(ledger) {
 		if (e.prev !== (prev?.hash ?? null)) problems.push(`entry ${e.seq} does not follow entry ${prev?.seq ?? "none"}`);
 		if (e.hash !== entryHash(e)) problems.push(`entry ${e.seq} (${e.release}) was changed after it was written`);
 		if (e.gate?.status !== "PASS") problems.push(`entry ${e.seq} (${e.release}) is not a PASS`);
-		if (prev && e.champion !== prev.release && !e.chainStart) problems.push(`entry ${e.seq}'s champion ${e.champion} is not ${prev.release}`);
+		if (prev && e.champion !== prev.release && !e.chainStart && e.follows !== prev.release) problems.push(`entry ${e.seq}'s champion ${e.champion} is not ${prev.release}`);
+		if (e.follows && e.follows !== prev?.release) problems.push(`entry ${e.seq} follows ${e.follows}, which is not the entry before it`);
 	});
 	return problems;
 }
@@ -202,7 +210,7 @@ export function trend(entries, { from, to }) {
 	const weeks = days / 7 + 1;
 	const pct = (x) => (base > 0 ? (100 * x) / base : null);
 	const perWeek = (x) => (pct(x) === null ? null : pct(x) / weeks);
-	const chainBreaks = used.slice(1).filter((e, i) => e.champion !== used[i].release).map((e) => e.release);
+	const chainBreaks = used.slice(1).filter((e, i) => e.champion !== used[i].release && e.follows !== used[i].release).map((e) => e.release);
 	const result = {
 		...out,
 		cumulative: { points: cumulative, low: cumulative - 1.96 * se, high: cumulative + 1.96 * se, se },
@@ -242,6 +250,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			anchors: { type: "string" },
 			"signed-by": { type: "string" },
 			"chain-start": { type: "boolean", default: false },
+			follows: { type: "string" },
 			ledger: { type: "string" },
 			quarter: { type: "string" },
 			from: { type: "string" },
@@ -296,13 +305,13 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 				problems.push(error.message);
 			}
 		}
-		problems.push(...writeProblems({ state, result, records, ledger, signers, chainStart: values["chain-start"] }));
+		problems.push(...writeProblems({ state, result, records, ledger, signers, chainStart: values["chain-start"], follows: values.follows ?? null }));
 		if (problems.length) {
 			for (const p of problems) console.error(p);
 			console.error(`nothing was written to ${ledgerPath}`);
 			process.exit(1);
 		}
-		const next = appendEntry(ledger, entryFor({ state, result, records, signers, chainStart: values["chain-start"] }));
+		const next = appendEntry(ledger, entryFor({ state, result, records, signers, chainStart: values["chain-start"], follows: values.follows ?? null }));
 		writeFileSync(ledgerPath, `${JSON.stringify(next, null, 2)}\n`);
 		const e = next.entries.at(-1);
 		console.log(`${ledgerPath}: entry ${e.seq}, ${e.release} over ${e.champion}, anchors ${f(e.anchors.difference)} points (${f(e.anchors.low)} to ${f(e.anchors.high)}), signed by ${signers.join(", ")}`);

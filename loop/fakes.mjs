@@ -192,3 +192,35 @@ export function fakeWriter({ diff, costUsd = 0.04, model = "claude-opus-5-5", ca
 		},
 	};
 }
+
+/**
+ * A throwaway private exam for the autopilot: `tasks` exam-tier tasks drafted by a model, the first `approved` of them
+ * approved by a person; locked when `lock`, and with an anchor set of the first 20 when `anchors` (both as the scripts
+ * make them). Returns { root, tasks, anchors, judges }.
+ */
+export async function sealedExam({ tasks = 24, approved = tasks, lock = true, anchors = approved >= 20 } = {}) {
+	const { currentTasks, lockPathFor } = await import("../scripts/lock-tasks.mjs");
+	const { anchorsPathFor, makeAnchors, writeAnchors } = await import("../runner/anchors.mjs");
+	const root = mkdtempSync(join(tmpdir(), "loop-sealed-"));
+	const dir = join(root, "tasks");
+	const ids = [];
+	for (let i = 0; i < tasks; i++) {
+		const id = `e${String(i).padStart(3, "0")}`;
+		ids.push(id);
+		const t = join(dir, id);
+		mkdirSync(join(t, "repo"), { recursive: true });
+		mkdirSync(join(t, "judge"), { recursive: true });
+		writeFileSync(join(t, "task.json"), JSON.stringify({ id, kind: "everyday", tier: "exam", draftedBy: "openai/gpt-x", ...(i < approved ? { approvedBy: "arnav", approvedAt: "2026-10-24T00:00:00.000Z" } : {}) }));
+		writeFileSync(join(t, "request.md"), `Task ${i}.\n`);
+		writeFileSync(join(t, "repo", "a.py"), `x = ${i}\n`);
+		writeFileSync(join(t, "judge", "judge.mjs"), `// judge ${i}\n`);
+	}
+	let anchorsPath = null;
+	if (lock) writeFileSync(lockPathFor(dir), JSON.stringify({ lockedAt: "2026-10-24T00:00:00Z", tasks: currentTasks(dir) }));
+	if (anchors) {
+		anchorsPath = anchorsPathFor(dir, "anchors-v1");
+		writeAnchors(anchorsPath, makeAnchors({ tasksDir: dir, ids: ids.slice(0, 20), version: "anchors-v1" }));
+	}
+	const judges = Object.fromEntries(Object.entries(currentTasks(dir)).map(([id, t]) => [id, t.hashes.judge]));
+	return { root, tasks: dir, ids, anchors: anchorsPath, judges };
+}

@@ -153,6 +153,14 @@ export const armRuns = (arm, model) => (arm.providers ?? ["anthropic"]).includes
 /** A released Relay version, as the installer's RELAY_VERSION takes it: 0.6.121, or a beta such as 0.6.122-beta.3. */
 export const RELAY_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
+/**
+ * A local build of Relay that the autopilot made and the gate judges (GATE.md, amendment 4): a version that no release
+ * channel ever publishes, `<x.y.z>-loop.<year>w<week>`, with an optional `.<n>` for a rebuild in the same week, such as
+ * 0.6.122-loop.2026w44. Its package is a local tarball, never published.
+ */
+export const LOCAL_BUILD_PATTERN = /^\d+\.\d+\.\d+-loop\.\d{4}w\d{2}(?:\.\d+)?$/;
+export const isLocalBuild = (version) => LOCAL_BUILD_PATTERN.test(version ?? "");
+
 /** The tiers a model arm can put its model on: one of Relay's three, or all of them. */
 export const MODEL_ARM_TIERS = Object.freeze(["all", "decider", "strong", "fast"]);
 const MODEL_ARM = /^(\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?)\+(all|decider|strong|fast)\+([a-z0-9][a-z0-9.-]*)$/;
@@ -177,8 +185,9 @@ export function modelArm(version, tier, model) {
 /**
  * The arm for a tool name. `relay@<version>` is Relay at that released version, installed for the run (GATE.md); the
  * gate compares two of them. `relay@<version>+<tier>+<model>` is the same Relay with another model on that tier (model
- * watch), and `override` says which. `relay@pkg` is Relay from --relay-package, for pre-screens only. Every other name
- * is an arm of ARMS as it is.
+ * watch), and `override` says which. `relay@pkg` is Relay from --relay-package, for pre-screens only. A local build,
+ * `relay@0.6.122-loop.2026w44`, is Relay from --relay-package too, and the only package a counted gate may judge
+ * (`localBuild` names its version). Every other name is an arm of ARMS as it is.
  */
 export function armFor(tool) {
 	const at = tool.indexOf("@");
@@ -190,6 +199,7 @@ export function armFor(tool) {
 	const spec = tool.slice(at + 1);
 	if (base !== "relay") return null;
 	if (spec === "pkg") return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true };
+	if (isLocalBuild(spec)) return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true, localBuild: spec };
 	const modelArmSpec = parseModelArm(spec);
 	if (modelArmSpec) {
 		const { version, tier, model } = modelArmSpec;

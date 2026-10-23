@@ -15,6 +15,8 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
   amendment 3); a dry run unless given a spend cap.
 - [loop/](loop/) is the improvement loop: every week it proposes changes to Relay, one lane each, pre-screens them and
   writes one release for a person to open; TIERS.md says what it may see and never change.
+- [AUTOPILOT.md](AUTOPILOT.md): `node loop/autopilot.mjs` carries the week's cycle to one pull request in the harness,
+  only after the gate on the exam passes; a person's merge is the one step per release.
 - [teaching/](teaching/) turns lessons many machines chose to share into skill candidates, which reach Relay only
   through the loop and the gate; [TEACHING.md](TEACHING.md) has the rules, and that training data is never collected
   by default.

@@ -366,7 +366,8 @@ Before the first paid cycle:
    person approved, or changed since.
 2. **Keys in the environment:** `RELAY_BENCH_ANTHROPIC_KEY` (the pre-screen's runs, and the writer: `claude-opus-5-5`
    unless `--writer-model` says otherwise, never an OpenAI model, since OpenAI drafts the exam) and `E2B_API_KEY`.
-3. **A build per proposal.** The loop never builds, publishes or opens anything in the harness. In a harness worktree at
+3. **A build per proposal.** The cycle never builds, publishes or opens anything in the harness (the autopilot below
+   does these steps for it, and publishes nothing). In a harness worktree at
    `v<champion>`: `git apply runs/loop/<week>/proposals/<id>.patch`, then `npm run arch`, `npm run build` and
    `npm run release:pack`; copy the Relay package to `runs/loop/<week>/packages/<id>.tgz`. A proposal with no build
    waits.
@@ -383,6 +384,24 @@ make; `scripts/ledger.mjs write` still writes it only after that gate stops with
 The meta loop: `node loop/meta.mjs judge` prints each lane's spend, gated gain and gain per dollar, and its proposals
 (also in `runs/loop/<week>/meta/`). A person applies one with `node loop/meta.mjs approve --by <name> --proposal
 runs/loop/<week>/meta/<id>.json`.
+
+### The autopilot: the week carried to a pull request
+
+**Not yet run on paid steps** (the exam has no approved tasks yet). AUTOPILOT.md has the rules. One command runs the
+cycle above, builds every proposal's Relay in a harness worktree (step 3, automated), pre-screens the builds, builds
+and checks the packaged release at origin/main, gates it on the exam as a local build (GATE.md, amendment 4), and on
+PASS writes the ledger entry and opens one pull request in the harness. Merging it is the one step for a person:
+
+```
+node loop/autopilot.mjs --spend-cap 20 --signed-by <your name> --keychain relay-openai
+```
+
+Without `--spend-cap` it runs nothing and prints the most the week could cost. With fewer than 20 approved, locked
+exam tasks it runs the cycle's free steps and stops with one sentence. Approve the drafted exam tasks in one command,
+at a terminal: `node scripts/approve-many.mjs --by <your name> --tasks-dir ../relay-exam/tasks --except id1,id2`.
+After a merge, `node loop/autopilot.mjs --after-merge <pr>` records the release that holds it as the next champion
+(the weekly run also checks by itself). `--install-schedule weekly --spend-cap 20 --signed-by <your name>` installs
+the weekly launchd job, with no key in it.
 
 ### Taught skills
 

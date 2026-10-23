@@ -14,7 +14,8 @@
 // <out>/<test>.tasks.json on the first real run, and a resumed stage reads it back, so it never changes mid-stage.
 //
 // --relay-package <tgz> gives the tool relay@pkg a Relay build that is not released (a pre-screen, GATE.md): only that
-// tool's runs get it, and only in a test whose name starts with dev or pilot.
+// tool's runs get it, and only in a test whose name starts with dev or pilot. A local build the gate judges
+// (relay@0.6.122-loop.2026w44, GATE.md amendment 4) gets it in a counted test too, and is the only tool that may.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -70,9 +71,13 @@ for (const tool of tools) {
 	const problems = overrides.length ? unpricedProblems([...new Set([args.model, ...overrides])]) : [];
 	if (problems.length) throw new Error(`${problems.join("; ")}; nothing was run`);
 }
-// An unreleased build is pre-screened only, never counted (GATE.md, "Released versions only, for a counted gate").
-if (tools.includes("relay@pkg") && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package <tgz>; nothing was run");
-if (args["relay-package"] && counted) throw new Error(`--relay-package is for dev and pilot tests only, not ${args.test}; nothing was run`);
+// An unreleased build is pre-screened only, never counted (GATE.md, "Released versions only, for a counted gate"),
+// except a local build the gate judges by its package's hash (amendment 4).
+const packaged = tools.filter((tool) => armFor(tool).relayPackage);
+const localBuilds = tools.filter((tool) => armFor(tool).localBuild);
+if (packaged.length && !args["relay-package"]) throw new Error(`${packaged[0]} needs --relay-package <tgz>; nothing was run`);
+if (packaged.length > 1) throw new Error(`one package per stage, and ${packaged.join(" and ")} would share it; nothing was run`);
+if (args["relay-package"] && counted && !localBuilds.length) throw new Error(`--relay-package is for dev and pilot tests only, or a local build's gate, not ${args.test}; nothing was run`);
 if (args["relay-package"] && !existsSync(resolve(args["relay-package"]))) throw new Error(`no Relay package at ${args["relay-package"]}; nothing was run`);
 const capUsd = Number(args["cap-usd"]);
 const stageCap = Number(args["stage-cap-usd"]);
@@ -173,7 +178,7 @@ function runOne(job) {
 				"--task", job.task, "--tool", job.tool, "--model", args.model, "--rep", String(job.rep),
 				"--cap-usd", String(capUsd), "--test", args.test, "--out", args.out, "--tasks-dir", args["tasks-dir"],
 				...(job.fault ? ["--fault", job.fault] : []),
-				...(job.tool === "relay@pkg" ? ["--relay-package", resolve(args["relay-package"])] : []),
+				...(armFor(job.tool).relayPackage ? ["--relay-package", resolve(args["relay-package"])] : []),
 			],
 			{ stdio: ["ignore", "pipe", "pipe"] },
 		);

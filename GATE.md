@@ -5,7 +5,8 @@ champion (the Relay people have now)? These rules are fixed here, before any gat
 amendment at the end of this file, committed before the runs it affects.
 
 **Amendment 1 (gate v2) changes how the interval is computed, lets a gate look more than once, and adds safety flags,
-a leak budget, anchors and combined candidates.** Read the rules below together with it.
+a leak budget, anchors and combined candidates.** Read the rules below together with it. **Amendment 4 lets a counted
+gate judge a local build that the autopilot made, by its package's hash, before anything is released.**
 
 ## What runs
 
@@ -246,4 +247,37 @@ the leak budget, the pinned graders and the exit codes are this file's.
   hash shows a file was not changed after it was written; it does not show who wrote it.
 - **A dearer model can block.** "Costs more" still blocks at the last look: a new model that is better but costs more
   than 5% over the champion's spend is not routed to by itself. A person who wants it sets it in Relay's settings.
+
+### 4. A local build as the candidate (24 October 2026, before any gate run)
+
+The autopilot (AUTOPILOT.md) gates the week's release before a person merges it, so that the founder's one step, the
+click on Merge, comes after the verdict. At that point the candidate is not released anywhere: it is the pull request's
+commit and the package built from it. Until now only a released version could be a counted gate's candidate, so the
+gate would have come after the merge, or a release would have been cut for every proposal. This amendment lets a
+counted gate judge such a build. Nothing else changes: the champion is still a released version, installed by Relay's
+own installer; the tasks, the anchors, the looks and their boundaries, the verdict rules and their order, the leak
+budget, the pinned graders and the exit codes are this file's. `relay@pkg` stays for pre-screens only.
+
+**In plain words**
+
+- **The name.** A local build is `relay@<x.y.z>-loop.<year>w<week>`, with `.<n>` for another build in the same week,
+  such as `relay@0.6.122-loop.2026w44`. No release channel publishes such a version (the release workflow publishes
+  `x.y.z` and `x.y.z-beta.*`), so a local build's runs can never be read as a release's, and the installer refuses it.
+- **The package.** Every candidate run installs one local tarball, given with `--candidate-package`: the Relay CLI
+  package that Relay's own release script (`npm run release:pack`) packed at that version, from one commit, after
+  `npm run arch` and `npm run check` passed on that commit. The tarball is never published. The gate fixes its SHA-256
+  at the first look, keeps it in the gate's state, and refuses another package mid-gate.
+- **Every run is of that build.** A run records the SHA-256 of the package it installed and what `relay --version`
+  printed. A look in which a graded candidate run installed another package, or printed another version, is
+  UNRESOLVED ("build differs") and is not counted, as a run graded by a judge other than the pinned one is not.
+- **What ships.** The pull request names the commit and the package's hash. The release that ships the change holds
+  that commit, and may hold changes merged after it, which this gate did not judge. The next cycle's champion is the
+  release that holds the merge, so the next gate measures everything that release carries.
+- **The ledger.** The entry names the build as its release and keeps the package's SHA-256 (`build.sha256`). The next
+  entry's champion is the release that shipped that build, not the build: `scripts/ledger.mjs write --follows
+  <build>` says so, the entry records `follows`, and the chain holds only when that build is the ledger's last release.
+
+**The verdict, in order:** as amendment 1's list, with one rule after "UNRESOLVED, graders not pinned": **UNRESOLVED,
+build differs**, when a graded candidate run of a local build did not install the gate's package or did not print its
+version.
 

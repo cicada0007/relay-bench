@@ -1,6 +1,7 @@
 // runner/gate.mjs end to end on throwaway folders and made-up records: no model, no sandbox, nothing spent.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -168,4 +169,49 @@ test("an exam gate refuses runs graded by a judge other than the one pinned for 
 	const unpinned = gate(["--test", "gate-0.6.122", "--tier", "exam", "--tasks-dir", bare.tasks, "--out", bare.out, "--plan-tasks", "100", "--anchors", bare.anchors]);
 	assert.notEqual(unpinned.code, 0);
 	assert.match(unpinned.err, /no graders are pinned for 0\.6\.122/);
+});
+
+test("a local build is judged by its package: fixed at the first look, and a look with another build is UNRESOLVED", () => {
+	const e = exam(30);
+	const version = "0.6.122-loop.2026w44";
+	writePin(pinPathFor(e.tasks, version), makePin({ tasksDir: e.tasks, release: version }));
+	const pkg = join(e.root, "relay-worker.tgz");
+	writeFileSync(pkg, "a made-up build");
+	const other = join(e.root, "other.tgz");
+	writeFileSync(other, "another build");
+	const sha = createHash("sha256").update("a made-up build").digest("hex");
+	const run = (args) => {
+		const r = spawnSync(process.execPath, [GATE, "--champion", "0.6.121", "--candidate", version, "--tier", "exam", "--tasks-dir", e.tasks, "--out", e.out, "--plan-tasks", "30", "--anchors", e.anchors, ...args], { encoding: "utf8" });
+		return { code: r.status, out: r.stdout, err: r.stderr };
+	};
+	const rows = (test, packageSha) => {
+		const lines = [];
+		for (let i = 0; i < 30; i++) {
+			const task = `t${String(i).padStart(3, "0")}`;
+			lines.push(JSON.stringify({ runId: `${test}-${task}-c`, test, task, taskKind: "everyday", tool: CHAMP, rep: 1, score: { share: 0.2 }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes: { judge: e.judges[task] } }));
+			lines.push(JSON.stringify({ runId: `${test}-${task}-b`, test, task, taskKind: "everyday", tool: `relay@${version}`, rep: 1, score: { share: 0.8 }, usage: { costUsd: 0.1 }, wallMs: 60_000, taskHashes: { judge: e.judges[task] }, relayPackageSha256: packageSha, relayPackageVersion: version }));
+		}
+		mkdirSync(e.out, { recursive: true });
+		appendFileSync(join(e.out, "records.jsonl"), `${lines.join("\n")}\n`);
+	};
+
+	assert.match(run(["--test", "gate-a"]).err, /is a local build: pass its package with --candidate-package/);
+	const released = spawnSync(process.execPath, [GATE, "--test", "g", "--champion", "0.6.121", "--candidate", "0.6.122", "--candidate-package", pkg, "--out", e.out], { encoding: "utf8" });
+	assert.match(released.stderr, /--candidate-package is for a local build/);
+	assert.match(spawnSync(process.execPath, [GATE, "--test", "g", "--champion", "0.6.121-loop.2026w44", "--candidate", "0.6.122", "--out", e.out], { encoding: "utf8" }).stderr, /--champion must be a released Relay version/);
+
+	rows("gate-a", sha);
+	const a = run(["--test", "gate-a", "--candidate-package", pkg]);
+	assert.equal(a.code, 0, a.out + a.err);
+	assert.match(a.out, new RegExp(`local build +${version.replaceAll(".", "\\.")}, package ${sha.slice(0, 12)}`));
+	const state = JSON.parse(readFileSync(join(e.out, "gate-a.looks.json"), "utf8"));
+	assert.deepEqual(state.candidatePackage, { version, sha256: sha });
+	assert.match(run(["--test", "gate-a", "--candidate-package", other]).err, /a build never changes mid-gate/);
+	assert.equal(run(["--test", "gate-a"]).code, 0, "a decided gate reads again without the package");
+
+	rows("gate-b", "f".repeat(64));
+	const b = run(["--test", "gate-b", "--candidate-package", pkg]);
+	assert.equal(b.code, 20, b.out + b.err);
+	assert.match(b.out, /build differs/);
+	assert.match(b.out, /its package is ffffffffffff, not /);
 });
