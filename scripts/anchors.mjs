@@ -37,8 +37,12 @@ if (command === "check") {
 
 if (!values.version) throw new Error("create needs --version, such as anchors-v1");
 if (Boolean(values.ids) === Boolean(values.sample)) throw new Error("create needs one of --ids or --sample");
-const exam = [...readTasks(tasksDir)].filter(([, t]) => t.tier === "exam").map(([id]) => id);
-const ids = values.ids ? values.ids.split(",").map((s) => s.trim()).filter(Boolean) : sampleIds(exam, Number(values.sample));
+const examTasks = [...readTasks(tasksDir)].filter(([, t]) => t.tier === "exam");
+const exam = examTasks.map(([id]) => id);
+// --sample draws from the approved tasks only: a set drawn from all of them would refuse itself on the first task a
+// founder left out.
+const approved = examTasks.filter(([, t]) => t.approvedBy && t.approvedAt).map(([id]) => id);
+const ids = values.ids ? values.ids.split(",").map((s) => s.trim()).filter(Boolean) : sampleIds(approved, Number(values.sample));
 const notExam = ids.filter((id) => !exam.includes(id));
 if (notExam.length) throw new Error(`anchors are exam tasks; these are not: ${notExam.join(", ")}`);
 const differences = lockDifferences(ids, tasksDir);
