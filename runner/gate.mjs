@@ -275,7 +275,8 @@ const refused = Boolean(result.exposure?.problems?.length || result.pin?.problem
 if (planned && result.look && !refused && !again) {
 	for (const e of reads) recordExposure(exposurePathFor(dir), e);
 	const at = new Date().toISOString();
-	state.looks.push({ index, tasks: n, fraction: result.look.fraction, z: result.look.z, spent: result.look.spent, status: result.status, label: result.label, at });
+	// The look's own tasks are kept, so the ledger can read the same look again from the records (scripts/ledger.mjs).
+	state.looks.push({ index, tasks: n, taskSet: shared, fraction: result.look.fraction, z: result.look.z, spent: result.look.spent, status: result.status, label: result.label, at });
 	if (result.final) state.decided = { status: result.status, label: result.label, look: index, at };
 	saveState();
 }

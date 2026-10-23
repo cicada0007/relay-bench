@@ -183,3 +183,43 @@ stopping at the first verdict raised false blocks from 2.0% to 5.2%, and false a
 *Power.* The same simulation shows what the caution costs. Same-version candidates pass as "no worse" 75.7% of the time
 on 400 steady tasks run once, 18.7% on 100 mixed tasks run twice, and 4.3% on 40 steady tasks; otherwise UNRESOLVED.
 The real spread of differences between two Relay versions, once measured, decides how many tasks a weekly gate needs.
+
+### 2. The compound ledger (23 October 2026, before any gate run)
+
+Each release only has to be never worse. The ledger shows whether the small gains add up: Relay is meant to get 1%
+better every week and prove it.
+
+**In plain words**
+
+- `ledger/ledger.json` holds one entry for every release that passed the gate on the exam, in order. An entry records
+  the release and its champion, the date, the model, the gate's result and design, the gain on the exam and on the
+  anchors with their intervals, the cost and time ratios, false "done", the safety flag counts, any combined lane
+  changes, and who signed it. It holds numbers only: no task names (the anchor set appears by its fingerprint) and no
+  words for results.
+- `node scripts/ledger.mjs write` never trusts a verdict file. It reads the gate's kept looks and the run records, and
+  computes the deciding look again with the gate's own code. It writes only when that gives the same PASS. So the
+  ledger is never written from a gate that did not pass, nor from one whose records were graded again since (the
+  latest grade counts, as everywhere). It also refuses a gate on another tier, a pilot or dev test, a release already
+  in the ledger, any safety flag on the candidate's runs (even one found after the gate decided), and anchors that
+  changed. A release must be signed by at least one person; a signer that is a model, a tool or an agent is refused.
+  Relay never signs its own release.
+- Each entry is chained to the one before by its hash, and each release's champion must be the ledger's last release.
+  `--chain-start` begins a new chain on purpose, and the entry says so. `node scripts/ledger.mjs verify` shows any
+  entry changed after it was written.
+- `node scripts/ledger.mjs trend --quarter 2026-Q4` adds up the quarter's gains on the anchors, with an interval.
+
+**The math of the trend**
+
+Release i's anchor gain d_i is a paired difference over the anchor tasks, with standard error se_i (the anchors'
+interval, two make-believe tasks included). Separate releases are gated on separate runs, so over the m releases in the
+window the gains and their variances add:
+
+- summed gain D = Σ d_i, with standard error S = √(Σ se_i²), and 95% interval D ± 1.96 S;
+- per release D / m; as a share of the first champion's anchor score A_0, 100 D / A_0 percent; spread over the
+  w = (days from the first release to the last) / 7 + 1 weeks, 100 D / (A_0 w) percent a week, each with the same
+  interval scaled alike;
+- compounded, 100 (Π (1 + d_i / A_(i−1)) − 1) percent, where A_(i−1) is release i's champion's anchor score;
+- a second reading: the least-squares slope of the releases' own anchor scores against weeks, with a 95% t interval,
+  over the releases on the last anchor version (at least three).
+
+The trend reports the anchor versions it spans and any chain restarts, so a reader can see what was added up.

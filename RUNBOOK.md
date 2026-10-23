@@ -182,6 +182,21 @@ Several lane changes released together are judged as one candidate with `--combi
 
 Check the gate's own false-accept rates, free: `node runner/gate-null.mjs --sims 20000` (several minutes).
 
+### Signing a release into the ledger
+
+A release that passed the gate on the exam goes in the compound ledger (GATE.md, amendment 2) once a founder signs it.
+The command reads the gate again from its records and writes nothing unless that gives PASS:
+
+```
+node scripts/ledger.mjs write --test gate-0.6.122 --out ../relay-exam/runs/gate --tasks-dir ../relay-exam/tasks \
+  --anchors ../relay-exam/anchors/anchors-v1.json --signed-by <your name>
+node scripts/ledger.mjs verify
+node scripts/ledger.mjs trend --quarter 2026-Q4
+```
+
+Then commit and push `ledger/ledger.json`. A release whose champion is not the ledger's last release needs
+`--chain-start`, which the entry records.
+
 ## Growing the exam
 
 **Not yet run.** Every command below is built and tested on recorded and made-up data only. TIERS.md says how a task is
