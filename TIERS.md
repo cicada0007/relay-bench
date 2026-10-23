@@ -136,6 +136,9 @@ yet run**: tested on made-up data only.
   to the harness's `relay.arch.json`, D-91, and the code that holds a value when relay.arch reads it from code), and
   exam proposals. Runtime is documented only. A writer lane's change must stay inside the one prompt it edits, and is
   refused when it names anything from the practice failures it was shown, since it would learn the task, not the skill.
+- **Taught skills** (TEACHING.md): a skill candidate graduated from lessons many machines chose to share
+  (`teaching/graduate.mjs`, at least 5 machines and 25 passing uses) is a prompts-and-skills proposal that adds one new
+  SKILL.md, checked and gated like any other; it never becomes a base skill any other way.
 - **Exam proposals** are kinds of task to mine more of (a language, a kind, a level), queued for a person in
   `queue/loop-proposals.jsonl`. A task the loop picked would be one it has seen, so it never proposes a task, and it
   never approves anything.

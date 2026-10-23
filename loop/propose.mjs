@@ -8,6 +8,9 @@
 //   for a cap. The loop applies what it writes to the champion's source itself, keeps only a change inside that
 //   prompt's declaration, and refuses one that names anything from a practice task (it would learn the task, not the
 //   skill).
+// - Taught skills (TEACHING.md): a skill candidate that lessons from many machines graduated into (teaching/graduate.mjs)
+//   is a prompts-and-skills proposal that adds one new SKILL.md. No model writes it, so it costs nothing; it is checked
+//   against the lane and the invariants like every other proposal, and only the gate lets it into Relay.
 // - The exam lane proposes kinds of task the exam should mine more of, into the exam's approval queue. A task the loop
 //   picked would be one it has seen, so it never proposes a task itself, and it never approves anything.
 // Every proposal is checked against its lane and the invariants (loop/lanes.mjs) before it is kept.
@@ -15,8 +18,9 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { changedPaths, getPath, serializeLike, setPath, unifiedDiff, under } from "./diff.mjs";
-import { codeHome, LANE_ORDER, LANES, proposalProblems, SET_HERE, symbolSpan } from "./lanes.mjs";
+import { leftovers } from "../teaching/graduate.mjs";
+import { changedPaths, getPath, newFileDiff, serializeLike, setPath, unifiedDiff, under } from "./diff.mjs";
+import { codeHome, LANE_ORDER, LANES, proposalProblems, SET_HERE, skillsRoot, symbolSpan } from "./lanes.mjs";
 import { WRITER_MAX_TOKENS, worstCostUsd } from "./writer.mjs";
 
 /**
@@ -375,6 +379,58 @@ export async function writeProposal({ cycle, target, source, writer, arch }) {
 	const problems = [...proposalProblems(p, { arch, sources: { [target.prompt.file]: source } }), ...overfitProblems({ added, source, clusters: target.clusters })];
 	if (problems.length) return { refused: problems, costUsd: cost, proposal: p };
 	return { proposal: p };
+}
+
+/**
+ * Taught skills: one prompts-and-skills proposal per skill candidate (teaching/graduate.mjs readCandidates), adding its
+ * SKILL.md as a new skill beside the ones Relay ships. Free: the candidate is the change. Each is checked against the
+ * lane and the invariants, its words again for secrets, paths, emails and links, and for names from the practice
+ * failures. Returns { candidates, refused: [{ id, lane, title, problems }], notes }.
+ */
+export function teachingProposals({ cycle, candidates = [], problems = [], arch, clusters = [], settings }) {
+	const out = { candidates: [], refused: [], notes: [] };
+	const lane = "prompts";
+	const id = (name) => `${cycle}-${lane}-teach-${name}`;
+	const title = (name) => `${LANES[lane].label}: new skill ${name}, taught`;
+	for (const p of problems) out.refused.push({ id: id(p.name), lane, title: title(p.name), problems: p.problems });
+	if (!candidates.length) return out;
+	if (settings?.lanes?.[lane]?.enabled === false || (settings?.lanes?.[lane]?.proposals ?? 0) < 1) {
+		out.notes.push(`teaching: ${candidates.length} skill candidate${candidates.length === 1 ? "" : "s"} wait; the ${lane} lane is off`);
+		return out;
+	}
+	const root = skillsRoot(arch);
+	if (!root) {
+		out.notes.push("teaching: this relay.arch names no one folder its skills ship in, so a taught skill has nowhere to go");
+		return out;
+	}
+	for (const c of candidates) {
+		const file = `${root}/${c.name}/SKILL.md`;
+		const e = c.candidate.evidence;
+		const p = {
+			id: id(c.name),
+			lane,
+			rule: `teach-${c.name}`,
+			title: title(c.name),
+			words: `add the skill ${c.name}, a ${c.candidate.kind} lesson ${e.machines} machines shared after it was used in ${e.passes} tasks that passed their checks there`,
+			expect: "tasks the lesson is about pass more often, and none passes less often",
+			change: { kind: "skill", file, skill: c.name, from: "teaching", lessonKind: c.candidate.kind, skillSha256: c.candidate.skillSha256 },
+			clusters: [],
+			evidence: { machines: e.machines, passes: e.passes, members: e.members, models: e.models },
+			patch: newFileDiff(c.skill, file),
+			touches: { arch: [], files: [file] },
+			apply: ["git apply <this patch>", "npm run arch (lists the new skill in relay.arch with its hash, and moves relay.arch's version)"],
+			costUsd: 0,
+			weight: e.passes,
+		};
+		p.risk = riskOf(p);
+		const why = [...proposalProblems(p, { arch })];
+		const left = leftovers(c.skill);
+		if (left.length) why.push(`the skill holds ${left.join(" and ")}`);
+		why.push(...overfitProblems({ added: c.skill, source: "", clusters }));
+		if (why.length) out.refused.push({ id: p.id, lane, title: p.title, problems: [...new Set(why)] });
+		else out.candidates.push(p);
+	}
+	return out;
 }
 
 const LANGUAGE_OF = { python3: "python", python: "python", node: "javascript", nodejs: "javascript" };

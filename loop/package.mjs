@@ -12,7 +12,7 @@
 // The loop never opens a pull request in relay-harness; a person reads this and decides.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { serializeLike, setPath, unifiedDiff } from "./diff.mjs";
+import { addsNewFile, newFileDiff, newFileText, serializeLike, setPath, unifiedDiff } from "./diff.mjs";
 import { LANE_ORDER, LANES } from "./lanes.mjs";
 import { applyToText, maxRisk } from "./propose.mjs";
 
@@ -44,13 +44,26 @@ export function choosePerLane(passed) {
 export function composePatch({ chosen, arch, archText, sources = () => null }) {
 	let after = arch;
 	const texts = new Map();
+	const created = new Set();
 	const kept = [];
 	const held = [];
 	for (const p of chosen) {
 		const codeParts = splitPatch(p.patch).filter((part) => part.file !== "relay.arch.json");
 		let ok = true;
 		const staged = new Map(texts);
+		const fresh = [];
 		for (const part of codeParts) {
+			// A new file (a taught skill's SKILL.md): it is the patch's own text, and only while nothing holds that path.
+			if (addsNewFile(part.text, part.file)) {
+				if (staged.has(part.file) || typeof sources(part.file) === "string") {
+					ok = false;
+					held.push({ id: p.id, why: `it adds ${part.file}, which already exists` });
+					break;
+				}
+				staged.set(part.file, newFileText(part.text));
+				fresh.push(part.file);
+				continue;
+			}
 			const base = staged.has(part.file) ? staged.get(part.file) : sources(part.file);
 			if (typeof base !== "string") {
 				ok = false;
@@ -67,12 +80,13 @@ export function composePatch({ chosen, arch, archText, sources = () => null }) {
 		}
 		if (!ok) continue;
 		for (const [file, text] of staged) texts.set(file, text);
+		for (const file of fresh) created.add(file);
 		if (p.change?.kind === "arch") after = setPath(after, p.change.path, p.change.to);
 		kept.push(p);
 	}
 	const parts = [];
 	if (arch && archText && after !== arch) parts.push(unifiedDiff(archText, serializeLike(after, archText), { path: "relay.arch.json" }));
-	for (const [file, text] of [...texts].sort(([a], [b]) => a.localeCompare(b))) parts.push(unifiedDiff(sources(file), text, { path: file }));
+	for (const [file, text] of [...texts].sort(([a], [b]) => a.localeCompare(b))) parts.push(created.has(file) ? newFileDiff(text, file) : unifiedDiff(sources(file), text, { path: file }));
 	return { patch: parts.join(""), kept, held, arch: after };
 }
 
@@ -123,8 +137,10 @@ export function prBody({ cycle, release, champion, chosen, results, arch, held, 
 		lines.push(`- **What:** ${p.words}.`);
 		if (p.change?.kind === "arch") {
 			lines.push(`- **relay.arch:** \`${p.change.path}\` from \`${fmt(p.change.from)}\` to \`${fmt(p.change.to)}\`${p.change.setHere ? " (set in relay.arch, D-91)" : `; the code holds it: \`${p.change.code?.file} ${p.change.code?.symbol}\`${p.change.code?.patched ? ", changed in this patch" : ", to be changed by hand"}`}.`);
-		} else lines.push(`- **Source:** \`${p.change.file}\`, the text of \`${p.change.symbol}\` (${p.change.prompt}), written by ${p.change.writer ?? "the loop's writer"} and checked to stay inside it.`);
-		lines.push(`- **Why:** ${p.evidence?.runs ?? "–"} failing practice runs on ${p.evidence?.tasks ?? "–"} tasks (${(p.clusters ?? []).join(", ") || "measured gap"}).`);
+		} else if (p.change?.kind === "skill") lines.push(`- **Source:** a new skill, \`${p.change.file}\`, graduated from lessons people chose to share (relay-bench teaching/, TEACHING.md); no model wrote it.`);
+		else lines.push(`- **Source:** \`${p.change.file}\`, the text of \`${p.change.symbol}\` (${p.change.prompt}), written by ${p.change.writer ?? "the loop's writer"} and checked to stay inside it.`);
+		if (p.change?.kind === "skill") lines.push(`- **Why:** ${p.evidence?.machines ?? "–"} machines shared it, after it was used in ${p.evidence?.passes ?? "–"} tasks there that passed their checks.`);
+		else lines.push(`- **Why:** ${p.evidence?.runs ?? "–"} failing practice runs on ${p.evidence?.tasks ?? "–"} tasks (${(p.clusters ?? []).join(", ") || "measured gap"}).`);
 		lines.push(`- **Expected:** ${p.expect}.`);
 		if (d) lines.push(`- **Dev set** (practice, ${d.tasks} tasks, relay@pkg minus relay@${champion}): ${signed(d.difference)} points, interval ${f(d.low)} to ${f(d.high)}; cost ratio ${f(d.costRatio, 3)}, time ratio ${f(d.timeRatio, 3)}; safety flags ${d.safetyFlags}.`);
 		lines.push(`- **Selection set** (the check tier's one word): ${r?.selection?.status === "pass" ? "pass" : r?.selection?.status === "not available" ? `not asked, ${r.selection.why}` : (r?.selection?.status ?? "–")}.`);
@@ -188,4 +204,4 @@ export function packageRelease({ cycle, cycleDir, results, proposals, arch, arch
 }
 
 /** The value a change sets, for a reader: used by the report. */
-export const describeChange = (p) => (p.change?.kind === "arch" ? `${p.change.path}: ${fmt(p.change.from)} → ${fmt(p.change.to)}` : `${p.change?.file} ${p.change?.symbol}`);
+export const describeChange = (p) => (p.change?.kind === "arch" ? `${p.change.path}: ${fmt(p.change.from)} → ${fmt(p.change.to)}` : p.change?.kind === "skill" ? `new skill ${p.change.skill} (${p.change.file})` : `${p.change?.file} ${p.change?.symbol}`);

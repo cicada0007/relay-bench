@@ -15,6 +15,9 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
   amendment 3); a dry run unless given a spend cap.
 - [loop/](loop/) is the improvement loop: every week it proposes changes to Relay, one lane each, pre-screens them and
   writes one release for a person to open; TIERS.md says what it may see and never change.
+- [teaching/](teaching/) turns lessons many machines chose to share into skill candidates, which reach Relay only
+  through the loop and the gate; [TEACHING.md](TEACHING.md) has the rules, and that training data is never collected
+  by default.
 - Results, with every run's record and transcript, will be published here and on relayevals.com, losses included.
 
 Anyone will be able to re-run each test on their own API key with one command. The cheapest test is planned to cost

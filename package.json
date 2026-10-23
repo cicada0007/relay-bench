@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test meter/*.test.mjs runner/*.test.mjs scripts/*.test.mjs loop/*.test.mjs",
+    "test": "node --test meter/*.test.mjs runner/*.test.mjs scripts/*.test.mjs loop/*.test.mjs teaching/*.test.mjs",
     "validate": "node scripts/validate-task.mjs"
   },
   "dependencies": {
