@@ -420,7 +420,9 @@ export async function draftTask({
 		};
 		writeFileSync(join(staging, "task.json"), `${JSON.stringify(task, null, 2)}\n`);
 		mkdirSync(tasksDir, { recursive: true });
-		cpSync(staging, target, { recursive: true });
+		// verbatimSymlinks: a repository's relative links stay as they are, not rewritten to absolute paths into staging,
+		// which is deleted and would leave them dangling (and leak a temp path into the task).
+		cpSync(staging, target, { recursive: true, verbatimSymlinks: true });
 		log(`${id}: ${checks.R1.length} R1 checks, ${checks.R0.length} R0 checks, ${checks.left.length} left out; drafted by ${task.draftedBy}`);
 		return { id, dir: target, checks, usage: drafted.usage, costUsd, judgeCheck };
 	} finally {
