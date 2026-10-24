@@ -2,7 +2,7 @@
 // the picker's answers already given, numbers only, no exam task names, and the history carried week to week.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import { buildGroups, defaultArms, harborLoader, patchLoader, runPicks } from ".
 import { loadBenchmark } from "../runner/harbor-bench.mjs";
 import { openLedger } from "./draft-spend.mjs";
 import { E2B_USD_PER_SECOND } from "./draft-spend.mjs";
-import { buildScoreboard, difference, sandboxOf, SCHEDULE_LABEL, scheduleArgsFor, toolEntry } from "./scoreboard.mjs";
+import { buildScoreboard, difference, LONG_CONTEXT, longContextRecord, sandboxOf, SCHEDULE_LABEL, scheduleArgsFor, toolEntry } from "./scoreboard.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const quiet = () => {};
@@ -78,7 +78,7 @@ const entry = (run, id) => run.entries.find((e) => e.id === id);
 test("each benchmark and model has every tool's score with its interval, cost per solved task and time, and the meta-harness", async () => {
 	const { runsDir, examDir } = await fixture();
 	const board = await buildScoreboard({ runsDir, examDir, week: "2026-W43", generatedAt: "2026-10-24T00:00:00Z" });
-	assert.deepEqual(board.benchmarks.map((b) => [b.id, b.status]), [["terminal-bench-2-1", "not run yet"], ["swebench-verified", "complete"], ["swebench-pro", "complete"], ["exam", "complete"]]);
+	assert.deepEqual(board.benchmarks.map((b) => [b.id, b.status]), [["terminal-bench-2-1", "not run yet"], ["swebench-verified", "complete"], ["swebench-pro", "complete"], ["oolong", "not run yet"], ["longbench", "not run yet"], ["exam", "complete"]]);
 
 	const verified = board.benchmarks[1];
 	assert.equal(verified.dataset, "swe-bench/swe-bench-verified@sha256:b934b0cc3dc800fe945eaf9f1623329db97ee3133c706d20644524c7759fb341");
@@ -160,7 +160,7 @@ test("a group the picker has not answered is counted, not guessed, and the run s
 	assert.equal(meta.groupsNotDecided, 1);
 	assert.equal(meta.groups, 1);
 	assert.equal(meta.score, 100, "over the one group decided without a call");
-	assert.equal(board.benchmarks[3].status, "not run yet");
+	assert.equal(board.benchmarks.find((b) => b.id === "exam").status, "not run yet");
 });
 
 test("every week adds its lines to the history and replaces the same week's", async () => {
@@ -229,4 +229,92 @@ test("sandbox cost sits beside model cost: as the runner recorded it, else estim
 	assert.equal(e.costUsd, 2, "model spend stays model spend");
 	assert.ok(Math.abs(e.sandboxUsd - (0.5 + 10 * E2B_USD_PER_SECOND)) < 1e-12);
 	assert.equal(e.sandboxEstimatedTrials, 1);
+});
+
+/** Made-up test G records (runner/longctx.mjs's shape) for the manifest's first `n` items of each set. */
+function fakeLongContext(runsDir, { n = 4, score = (set, i, tool) => (tool === "relay" ? i % 2 : 0) } = {}) {
+	const manifest = JSON.parse(readFileSync(join(ROOT, "runner", "longctx-manifest.json"), "utf8"));
+	const rows = [];
+	for (const set of ["oolong", "longbench"]) {
+		for (const [i, item] of manifest.sets[set].items.slice(0, n).entries()) {
+			for (const tool of ["relay", "claude-code", "prime-agent"]) {
+				rows.push({
+					runId: `G-${set}-${item.id}-${tool}-a1-000000`, test: "G", set, item: item.id, tool, model: "claude-haiku-5-5", attempt: 1, capUsd: 0.5,
+					pins: { node: "22", relay: "0.6.118", primeAgent: "0.10.0", claudeCode: "2.1.300", hermes: "0.22.2" }, sandbox: "made-up-sandbox-id",
+					startedAt: "2026-10-16T10:00:00.000Z", finishedAt: "2026-10-16T10:00:30.000Z", wallMs: 20_000,
+					usage: { requests: 2, refusedAtCap: 0, input: 10, output: 100, cacheRead: 0, cacheWrite: 0, costUsd: 0.002 }, score: score(set, i, tool), parsed: "x", gold: "y",
+				});
+			}
+		}
+	}
+	mkdirSync(join(runsDir, "round-1", "G"), { recursive: true });
+	writeFileSync(join(runsDir, "round-1", "G", "records.jsonl"), `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+	return { manifest, rows };
+}
+
+test("OOLONG and LongBench v2 are benchmarks of their own, each with its own measure, from test G's records, numbers only", async () => {
+	const root = mkdtempSync(join(tmpdir(), "scoreboard-longctx-"));
+	const runsDir = join(root, "runs");
+	// OOLONG's scorer gives 0.75 to the power of the distance for a number that is off: a share, not a solve.
+	fakeLongContext(runsDir, { n: 50, score: (set, i, tool) => (tool === "relay" ? (i < 10 ? 1 : 0) : tool === "claude-code" ? (set === "oolong" && i === 0 ? 0.75 : i < 5 ? 1 : 0) : 0) });
+	const board = await buildScoreboard({ runsDir, examDir: join(root, "none"), week: "2026-W43" });
+	const oolong = board.benchmarks.find((b) => b.id === "oolong");
+	const longbench = board.benchmarks.find((b) => b.id === "longbench");
+	assert.deepEqual([oolong.title, oolong.measure, oolong.status, oolong.tasksInSet], ["OOLONG (yahoo, 128k)", "OOLONG score", "complete", 50]);
+	assert.deepEqual([longbench.title, longbench.measure, longbench.status, longbench.tasksInSet], ["LongBench v2", "accuracy", "complete", 503]);
+	assert.equal(oolong.dataset, "oolongbench/oolong-synth@f0d59eaf0febf130664cfceb710436c8e3216b2b");
+	assert.equal(longbench.dataset, "zai-org/LongBench-v2@2b48e494f2c7a2f0af81aae178e05c7e1dde0fe9");
+	assert.equal(oolong.metaHarness, "not scored");
+	assert.match(oolong.about, /OOLONG's published scorer \(abertsch72\/oolong at 0bb7eabe…\)/);
+	assert.match(longbench.about, /50 of its 503 questions/);
+
+	const run = oolong.runs[0];
+	assert.deepEqual([run.test, run.label, run.modelName, run.tasks, run.trialsPerTask, run.trialsNotMade, run.sample], ["G", "Round 1, test G", "Claude Haiku 5.5", 50, 1, 0, undefined]);
+	assert.equal(longbench.runs[0].sample, 50, "a fixed sample of 50 of its 503 questions");
+	assert.deepEqual(run.entries.map((e) => e.name), ["Relay 0.6.118", "Claude Code 2.1.300", "Prime Agent 0.10.0"], "versions from the image's pins each run kept; no meta-harness");
+	const cc = run.entries.find((e) => e.id === "claude-code");
+	assert.ok(Math.abs(cc.score - (100 * (0.75 + 4)) / 50) < 1e-9, "the benchmark's own score, partial credit included");
+	assert.ok(Math.abs(cc.costPerSolvedUsd - (50 * 0.002) / 4) < 1e-12, "cost per solved counts items scored 1");
+	assert.equal(run.entries.find((e) => e.id === "relay").score, 20);
+	assert.deepEqual(run.differences.map((d) => [d.of, d.minus, d.tasks]), [["relay", "claude-code", 50], ["relay", "prime-agent", 50]]);
+	assert.ok(Math.abs(run.differences[1].points - 20) < 1e-9);
+	assert.equal(run.entries.find((e) => e.id === "relay").sandboxEstimatedTrials, 50, "sandbox time from each run's start and end");
+	assert.ok(board.history.some((h) => h.benchmark === "oolong" && h.entry === "relay" && h.score === 20));
+	assert.match(board.measures.score, /OOLONG's own score .* accuracy \(LongBench v2/);
+	assert.doesNotMatch(JSON.stringify(board), /\b(better|worse|beats?|beaten|outperform\w*|wins?|won|loses?|lost|best|worst|clear difference)\b/i);
+
+	// A shorter run is in progress, with the trials it did not make counted.
+	const short = mkdtempSync(join(tmpdir(), "scoreboard-longctx-short-"));
+	fakeLongContext(join(short, "runs"), { n: 30 });
+	const partial = (await buildScoreboard({ runsDir: join(short, "runs"), examDir: join(short, "none"), week: "2026-W43" })).benchmarks.find((b) => b.id === "longbench").runs[0];
+	assert.equal(partial.status, "in progress");
+	assert.equal(partial.trialsNotMade, 20 * 3);
+	// A round that shrank runs the first 25 of each set, and that is the whole plan.
+	const shrunk = mkdtempSync(join(tmpdir(), "scoreboard-longctx-25-"));
+	fakeLongContext(join(shrunk, "runs"), { n: 25 });
+	assert.equal((await buildScoreboard({ runsDir: join(shrunk, "runs"), examDir: join(shrunk, "none"), week: "2026-W43" })).benchmarks.find((b) => b.id === "oolong").runs[0].status, "complete");
+
+	// A record keeps its sandbox's id apart from its sandbox cost.
+	const r = longContextRecord({ item: "1", tool: "codex", score: 1, sandbox: "sbx", pins: { codex: "0.163.0" } });
+	assert.deepEqual([r.task, r.rep, r.score.share, r.sandbox, r.sandboxId, r.agent.version], ["1", 1, 1, undefined, "sbx", "0.163.0"]);
+	assert.deepEqual(Object.keys(LONG_CONTEXT), ["oolong", "longbench"]);
+});
+
+test("a harness version harness watch queued is its own run on the exam, beside the bar's stage", async () => {
+	const root = mkdtempSync(join(tmpdir(), "scoreboard-watched-"));
+	const examDir = join(root, "relay-exam");
+	fakeExam(examDir, {
+		runs: [
+			{ test: "bar-1-haiku", task: "sealed-a", tool: "relay@0.6.121", rep: 1, share: 1 },
+			{ test: "bar-1-haiku", task: "sealed-a", tool: "claude-code", rep: 1, share: 1 },
+			{ test: "bar-1-haiku-claude-code-2.1.310", task: "sealed-a", tool: "relay@0.6.121", rep: 1, share: 1 },
+			{ test: "bar-1-haiku-claude-code-2.1.310", task: "sealed-a", tool: "claude-code@2.1.310", rep: 1, share: 0 },
+			{ test: "bar-1-haiku-hermes-1.0.0", task: "sealed-a", tool: "hermes", rep: 1, share: 0 },
+		],
+	});
+	const board = await buildScoreboard({ runsDir: join(root, "runs"), examDir, week: "2026-W44" });
+	const exam = board.benchmarks.find((b) => b.id === "exam");
+	assert.deepEqual(exam.runs.map((r) => [r.test, r.label]), [["bar-1-haiku", "The exam, Claude Haiku 5.5"], ["bar-1-haiku-claude-code-2.1.310", "The exam, Claude Haiku 5.5, Claude Code 2.1.310"]]);
+	assert.deepEqual(exam.runs[1].entries.map((e) => e.name), ["Relay 0.6.121", "Claude Code 2.1.310", "Relay meta-harness"]);
+	assert.doesNotMatch(JSON.stringify(exam), /sealed-a/);
 });

@@ -1,6 +1,7 @@
 // Where the scoreboard's records and picker answers are: round 1's test F, and every stage folder under
 // <runs>/scoreboard/ (runner/harbor-bench.mjs's default). scripts/scoreboard.mjs and scripts/arm-outcomes.mjs read the
-// same stages through this module, so the router's evidence and the scoreboard always count the same trials.
+// same stages through this module, so the router's evidence and the scoreboard always count the same trials. Round 1's
+// test G (the long-context sets) is read by the scoreboard alone.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PICKER_EFFORT, PICKER_MODEL } from "../meta/pick-groups.mjs";
@@ -14,6 +15,13 @@ const readJsonl = (path) => (existsSync(path) ? readFileSync(path, "utf8").split
  */
 export const SOURCES = Object.freeze([{ benchmark: "terminal-bench-2-1", stage: "round-1/F", label: "Round 1, test F", reuse: ["meta/pick-exam-gpt-6.1-sol-medium.jsonl"] }]);
 export const SCANNED = "scoreboard";
+
+/**
+ * Where the long-context sets' records are (runner/longctx.mjs, test G): one stage folder holds both sets, each record
+ * naming its set. The scoreboard reads them as two benchmarks; the router's evidence does not (they are questions about
+ * a long text, not coding tasks).
+ */
+export const LONG_CONTEXT_SOURCES = Object.freeze([{ stage: "round-1/G", label: "Round 1, test G" }]);
 
 /** Every stage folder under <runs>/scoreboard/, as a source of the benchmark its first record names. */
 export function scannedSources(runsDir) {

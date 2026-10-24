@@ -565,6 +565,13 @@ Found in Harbor's registry on 24 Oct 2026 with Harbor 0.24.0 (`harbor version li
 | SWE-bench Verified | `swe-bench/swe-bench-verified@sha256:b934b0cc…` (revision 2) | 500 | `runner/swebench-verified-tasks.json` |
 | SWE-bench Pro | `scale-ai/swe-bench-pro@sha256:88411d32…` (revision 2) | 731 | `runner/swebench-pro-tasks.json` |
 
+The two long-context sets of test G, OOLONG (yahoo, 128k) and LongBench v2, are on the scoreboard too, each as a
+benchmark with its own measure: OOLONG's own score (1 for the answer, 0.75 to the power of the distance for a number
+that is off, else 0) and LongBench v2's accuracy, from `runs/round-1/G/records.jsonl` and the committed manifest
+(`runner/longctx-manifest.json`), as `runner/longctx-analyze.mjs` reads them; an item is a task. They run through
+`runner/longctx.mjs`, not Harbor ("Test G" above). Each attempt is one printed answer, which the picker does not read,
+so the meta-harness is not scored on them.
+
 SWE-bench Verified is the `swe-bench` organisation's own package and SWE-bench Pro is `scale-ai`'s, the benchmark's
 authors; the registry also holds third-party copies (`nanoswe/swe-bench-verified`, `cais/swebenchpro`), which are not
 used. **Terminal-Bench 4.0 is not in the registry as an official release:** the `terminal-bench` organisation has
@@ -663,7 +670,8 @@ node scripts/scoreboard.mjs                # writes results/scoreboard.json for 
 node scripts/scoreboard.mjs --install-schedule weekly    # every Monday at 07:00 (macOS launchd; prints a crontab line)
 ```
 
-It reads `runs/round-1/F/`, every stage under `runs/scoreboard/`, and the bar's stages in `../relay-exam/runs/bar/`. It
+It reads `runs/round-1/F/` and `runs/round-1/G/`, every stage under `runs/scoreboard/`, and the bar's stages in
+`../relay-exam/runs/bar/` (with each harness version harness watch queued, as its own run). It
 never runs a trial or asks the picker, so the weekly job costs nothing; the week's numbers change when a person runs a
 stage or the picker with a cap. Each entry's `sandboxUsd` is its trials' sandbox time at E2B's price, apart from the
 model's `costUsd`: as the runner recorded it, or for a trial that recorded none (round 1's), estimated from its start

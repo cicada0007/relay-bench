@@ -1,9 +1,9 @@
 {
   "scoreboard": 1,
   "week": "2026-W43",
-  "generatedAt": "2026-10-24T08:57:49.533Z",
+  "generatedAt": "2026-10-24T13:18:20.138Z",
   "repository": "https://github.com/cicada0007/relay-bench",
-  "commit": "15b920385f08d752921734d9a5d82434f42f49ee",
+  "commit": "7868b4f38ade99cadd22d18c24f46c0e39410272",
   "preregistration": "https://github.com/cicada0007/relay-bench/blob/main/PREREGISTRATION.md",
   "statistics": {
     "unit": "The task. An entry's score on a task is its mean over that task's trials (the meta-harness: over that task's groups of attempts).",
@@ -13,7 +13,7 @@
     "sameModel": "Every entry in a run uses the same model, tasks, limits and meter. Claude Code runs Anthropic models and Codex OpenAI models, so each is in the runs of its own provider's models."
   },
   "measures": {
-    "score": "Solved (Terminal-Bench), resolved (SWE-bench) or requirements met (the exam), percent.",
+    "score": "Solved (Terminal-Bench), resolved (SWE-bench), OOLONG's own score (OOLONG: 1 for the answer, 0.75 to the power of the distance for a number that is off, else 0), accuracy (LongBench v2: the chosen letter is the answer) or requirements met (the exam), percent.",
     "allTrialsSolved": "The share of tasks where every trial succeeded, percent.",
     "costUsd": "Metered model spend of every trial counted, in dollars.",
     "sandboxUsd": "Sandbox time of every trial counted, apart from the model spend, at E2B's published price per second for 2 vCPU and 4 GiB (more for a task that asks for a larger sandbox), in dollars; for the meta-harness, every attempt of its groups. A trial that did not record its sandbox time is estimated from its start and end (sandboxEstimatedTrials).",
@@ -189,6 +189,213 @@
       "status": "not run yet"
     },
     {
+      "id": "oolong",
+      "title": "OOLONG (yahoo, 128k)",
+      "kind": "public",
+      "about": "OOLONG-synth (`oolongbench/oolong-synth` at revision f0d59eaf…), the test split's yahoo rows with a 131,072-token context: all 50 of them. Each tool gets the context as a file in a fresh sandbox and the benchmark's own question, in its own non-interactive mode on the same model and meter; its final answer is scored by OOLONG's published scorer (abertsch72/oolong at 0bb7eabe…), and no model judges. The measure is OOLONG's own score: 1 for the answer, 0.75 to the power of the distance for a number that is off, else 0. The meta-harness is not scored here: its picker reads a change or a terminal's actions, and these attempts are one printed answer each.",
+      "dataset": "oolongbench/oolong-synth@f0d59eaf0febf130664cfceb710436c8e3216b2b",
+      "datasetRevision": "f0d59eaf0febf130664cfceb710436c8e3216b2b",
+      "scorer": "https://github.com/abertsch72/oolong@0bb7eabe839218fee7fe8d007f41cfc2fd3ae24c",
+      "runner": "runner/longctx.mjs",
+      "tasksInSet": 50,
+      "measure": "OOLONG score",
+      "metaHarness": "not scored",
+      "runs": [
+        {
+          "test": "G",
+          "label": "Round 1, test G",
+          "model": "claude-haiku-5-5",
+          "modelName": "Claude Haiku 5.5",
+          "status": "complete",
+          "tasks": 50,
+          "trialsPerTask": 1,
+          "trialsNotMade": 0,
+          "droppedTasks": [],
+          "firstTrial": "2026-10-16",
+          "lastTrial": "2026-10-16",
+          "entries": [
+            {
+              "id": "relay",
+              "name": "Relay 0.6.118",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 10,
+              "low": 2,
+              "high": 20,
+              "allTrialsSolved": 10,
+              "costUsd": 0.19061042000000003,
+              "sandboxUsd": 0.06257039600000001,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.03812208400000001,
+              "medianMinutes": 0.27923333333333333,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            },
+            {
+              "id": "claude-code",
+              "name": "Claude Code 2.1.300",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 2,
+              "low": 0,
+              "high": 6,
+              "allTrialsSolved": 2,
+              "costUsd": 0.09114377000000003,
+              "sandboxUsd": 0.044676073999999996,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.09114377000000003,
+              "medianMinutes": 0.18943333333333334,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            },
+            {
+              "id": "prime-agent",
+              "name": "Prime Agent 0.10.0",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 6,
+              "low": 0,
+              "high": 14,
+              "allTrialsSolved": 6,
+              "costUsd": 0.15283655499999999,
+              "sandboxUsd": 0.05105687199999998,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.05094551833333333,
+              "medianMinutes": 0.22596666666666668,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            }
+          ],
+          "differences": [
+            {
+              "of": "relay",
+              "minus": "claude-code",
+              "tasks": 50,
+              "points": 8,
+              "low": 0,
+              "high": 18
+            },
+            {
+              "of": "relay",
+              "minus": "prime-agent",
+              "tasks": 50,
+              "points": 4,
+              "low": -6,
+              "high": 16
+            }
+          ]
+        }
+      ],
+      "status": "complete"
+    },
+    {
+      "id": "longbench",
+      "title": "LongBench v2",
+      "kind": "public",
+      "about": "LongBench v2 (`zai-org/LongBench-v2` at revision 2b48e494…, data.json sha256 15d61c22…): 50 of its 503 questions, drawn once and committed (runner/longctx-manifest.json: ascending ids, a shuffle seeded 20261015, the first 50). Each tool gets the text as a file in a fresh sandbox and the benchmark's own question, in its own non-interactive mode on the same model and meter; its final answer is scored by LongBench's published answer extraction and accuracy (THUDM/LongBench at 2e00731f…), uncompensated, and no model judges. The measure is accuracy: the share of questions whose chosen letter is the answer. The meta-harness is not scored here: its picker reads a change or a terminal's actions, and these attempts are one printed answer each.",
+      "dataset": "zai-org/LongBench-v2@2b48e494f2c7a2f0af81aae178e05c7e1dde0fe9",
+      "datasetRevision": "2b48e494f2c7a2f0af81aae178e05c7e1dde0fe9",
+      "scorer": "https://github.com/THUDM/LongBench@2e00731f8d0bff23dc4325161044d0ed8af94c1e",
+      "runner": "runner/longctx.mjs",
+      "tasksInSet": 503,
+      "measure": "accuracy",
+      "metaHarness": "not scored",
+      "runs": [
+        {
+          "test": "G",
+          "label": "Round 1, test G",
+          "model": "claude-haiku-5-5",
+          "modelName": "Claude Haiku 5.5",
+          "sample": 50,
+          "status": "complete",
+          "tasks": 50,
+          "trialsPerTask": 1,
+          "trialsNotMade": 0,
+          "droppedTasks": [],
+          "firstTrial": "2026-10-16",
+          "lastTrial": "2026-10-16",
+          "entries": [
+            {
+              "id": "relay",
+              "name": "Relay 0.6.118",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 60,
+              "low": 46,
+              "high": 74,
+              "allTrialsSolved": 60,
+              "costUsd": 0.37187389499999995,
+              "sandboxUsd": 0.07092275400000002,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.012395796499999999,
+              "medianMinutes": 0.3208166666666667,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            },
+            {
+              "id": "claude-code",
+              "name": "Claude Code 2.1.300",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 60,
+              "low": 46,
+              "high": 74,
+              "allTrialsSolved": 60,
+              "costUsd": 0.23469735000000003,
+              "sandboxUsd": 0.06024132400000001,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.007823245000000001,
+              "medianMinutes": 0.2492,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            },
+            {
+              "id": "prime-agent",
+              "name": "Prime Agent 0.10.0",
+              "kind": "tool",
+              "tasks": 50,
+              "trials": 50,
+              "score": 58,
+              "low": 44,
+              "high": 72,
+              "allTrialsSolved": 57.99999999999999,
+              "costUsd": 0.4593210100000001,
+              "sandboxUsd": 0.05861007199999999,
+              "sandboxEstimatedTrials": 50,
+              "costPerSolvedUsd": 0.015838655517241382,
+              "medianMinutes": 0.20353333333333334,
+              "unmeteredTrials": 0,
+              "stoppedAtCap": 0
+            }
+          ],
+          "differences": [
+            {
+              "of": "relay",
+              "minus": "claude-code",
+              "tasks": 50,
+              "points": 0,
+              "low": -10,
+              "high": 10
+            },
+            {
+              "of": "relay",
+              "minus": "prime-agent",
+              "tasks": 50,
+              "points": 2,
+              "low": -4,
+              "high": 10
+            }
+          ]
+        }
+      ],
+      "status": "complete"
+    },
+    {
       "id": "exam",
       "title": "Relay's sealed exam",
       "kind": "sealed",
@@ -234,6 +441,78 @@
       "low": 79.3103448275862,
       "high": 91.95402298850574,
       "costPerSolvedUsd": 0.11566846042857143
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "oolong",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "relay",
+      "name": "Relay 0.6.118",
+      "score": 10,
+      "low": 2,
+      "high": 20,
+      "costPerSolvedUsd": 0.03812208400000001
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "oolong",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "claude-code",
+      "name": "Claude Code 2.1.300",
+      "score": 2,
+      "low": 0,
+      "high": 6,
+      "costPerSolvedUsd": 0.09114377000000003
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "oolong",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "prime-agent",
+      "name": "Prime Agent 0.10.0",
+      "score": 6,
+      "low": 0,
+      "high": 14,
+      "costPerSolvedUsd": 0.05094551833333333
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "longbench",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "relay",
+      "name": "Relay 0.6.118",
+      "score": 60,
+      "low": 46,
+      "high": 74,
+      "costPerSolvedUsd": 0.012395796499999999
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "longbench",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "claude-code",
+      "name": "Claude Code 2.1.300",
+      "score": 60,
+      "low": 46,
+      "high": 74,
+      "costPerSolvedUsd": 0.007823245000000001
+    },
+    {
+      "week": "2026-W43",
+      "benchmark": "longbench",
+      "test": "G",
+      "model": "claude-haiku-5-5",
+      "entry": "prime-agent",
+      "name": "Prime Agent 0.10.0",
+      "score": 58,
+      "low": 44,
+      "high": 72,
+      "costPerSolvedUsd": 0.015838655517241382
     }
   ]
 }

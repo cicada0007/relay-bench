@@ -13,8 +13,8 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
   holds every release that passed it on the exam, numbers only.
 - [results/scoreboard.json](results/scoreboard.json) is the scoreboard, rebuilt every week by
   [scripts/scoreboard.mjs](scripts/scoreboard.mjs): each tool and Relay's meta-harness on Terminal-Bench 2.1, SWE-bench
-  Verified, SWE-bench Pro and the sealed exam, per model, numbers only, model and sandbox cost apart (RUNBOOK.md, "The
-  scoreboard, every week"). `scripts/publish-scoreboard.mjs` opens the public page's pull request in
+  Verified, SWE-bench Pro, the long-context sets OOLONG and LongBench v2, and the sealed exam, per model, numbers
+  only, model and sandbox cost apart (RUNBOOK.md, "The scoreboard, every week"). `scripts/publish-scoreboard.mjs` opens the public page's pull request in
   [Relay-harness/relay](https://github.com/Relay-harness/relay); the weekly job does it only with `--publish`.
 - [results/arm-outcomes.jsonl](results/arm-outcomes.jsonl), rebuilt with it, is the same trials as evidence for Relay's
   router: `relay router learn --import results/arm-outcomes.jsonl` (RUNBOOK.md, "The router's evidence").
