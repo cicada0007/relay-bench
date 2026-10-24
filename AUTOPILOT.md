@@ -50,6 +50,7 @@ tested, what it cost, and whether a pull request is waiting.
 | Step | What it does | Paid | Stops when |
 | --- | --- | --- | --- |
 | money | checks for `--spend-cap` | no | no cap was given: prints the most the week could cost (exit 3) |
+| harnesses | `scripts/harness-watch.mjs`, once a week: the npm registry's latest Claude Code and Codex against the benchmark's pins and the scoreboard; a new version gets an exam stage queued for a person, and one line per harness goes in the week's notes and the report | no | (never: a registry it cannot read is said so, and the week goes on) |
 | pull request | reads its earlier pull requests with `gh`, and records the release that holds a merged one | no | one is open, or merged but in no release yet (exit 4) |
 | harness | fixes origin/main for the week, names the champion and this week's build version | no | origin/main cannot be read |
 | ready | checks the exam (20 approved, locked tasks, an anchor set), the loop's approved settings, `--signed-by`, the keys and the disk (3 GB free) | no | anything missing: runs the free cycle steps, then prints one sentence (exit 4) |
@@ -64,6 +65,18 @@ tested, what it cost, and whether a pull request is waiting.
 The pull request's body is the package's `PR_BODY.md`, then the gate's verdict and its numbers, the build's commit
 and SHA-256, the week's spend, the ledger entry, how to roll back, and the exact commands to reproduce. It holds
 numbers only.
+
+It opens with **what Relay learned this week**, in one or two plain sentences (`loop/learned.mjs`): the change the
+release ships and the gate's measured result on the exam (points of requirements met against the champion, with the
+interval), the rows of the router's starting table it changes, and the harness versions tried for the first time that
+week. For example: "In week 2026-W44 Relay learned to set queue.requestCheck.maxChecks from 2 to 3; the gate on the
+exam measured +1.2 points of requirements met against relay@0.6.121 (interval -0.8 to 3.1, 120 tasks, PASS). It
+changes no row of the router's starting table, and this week's new harness version is Claude Code 2.1.310 (its exam
+stage is queued for a person)." The release's commit carries the same sentences as its changelog fragment,
+`packages/coding-agent/.changes/loop-<week>.md` (and one in each other package whose `src/` it changes), which the
+harness folds into CHANGELOG.md when a release is cut, so Releases shows it. That commit is fixed before the gate runs
+and is what the gate judges, so the fragment has the pre-screen's numbers on the dev set; the gate's are in the pull
+request and the ledger.
 
 Run the same command again to resume. The week's analysis and proposals are fixed at its first run. Builds, finished
 pre-screens, the release build, the gate's looks, the ledger entry and the pull request are each done once.
@@ -168,4 +181,7 @@ package installs and prints `0.6.122-loop.2026w43`. What has not run yet:
   "ready";
 - the per-run cost and time on the exam's tasks and on GPT-6 Luna, which the estimates above take from round 1;
 - `gh pr create` and `git push` against cicada0007/relay-harness, and the after-merge reading of a real release;
-- the launchd job itself, including the first Keychain prompt under launchd.
+- the launchd job itself, including the first Keychain prompt under launchd;
+- a queued harness stage. The harness watch's real read of npm was run once by hand as a dry run (24 Oct 2026: Claude
+  Code 2.1.310 and Codex 0.164.0, both out on 23 Oct, against pins 2.1.300 and 0.163.0); installing a new harness
+  version in a run's sandbox has not run, and the first one is the smoke a person starts.

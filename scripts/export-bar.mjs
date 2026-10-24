@@ -9,11 +9,15 @@ import { analyze, RESAMPLES, SEED } from "../runner/analyze.mjs";
 /** The Relay release the bar measures; the runbook's commands use the same arm. */
 export const BAR_RELAY = "relay@0.6.121";
 
-/** The bar's stages, as the runbook runs them. `sample` is the spot check's fixed draw of exam tasks. */
+/**
+ * The bar's stages, as the runbook runs them. `sample` is the spot check's fixed draw of exam tasks. `run` is the rest
+ * of the stage's command in RUNBOOK.md ("The bar"): its repetitions, the per-run, stage and sandbox caps, and how many
+ * run at once. Harness watch (scripts/harness-watch.mjs) plans a new harness version's stage from these.
+ */
 export const BAR_STAGES = Object.freeze([
-	{ id: "bar-1-haiku", title: "The exam, Claude Haiku 5.5", model: "claude-haiku-5-5", provider: "anthropic", tools: ["relay", "claude-code", "prime-agent", "hermes"] },
-	{ id: "bar-1-openai", title: "The exam, GPT-6 Luna", model: "gpt-6-luna", provider: "openai", tools: ["relay", "codex"] },
-	{ id: "bar-1-sonnet", title: "Spot check, 100 exam tasks, Claude Sonnet 5.5", model: "claude-sonnet-5-5", provider: "anthropic", tools: ["relay", "claude-code", "prime-agent"], sample: 100 },
+	{ id: "bar-1-haiku", title: "The exam, Claude Haiku 5.5", model: "claude-haiku-5-5", provider: "anthropic", tools: ["relay", "claude-code", "prime-agent", "hermes"], run: { reps: 1, capUsd: 1, stageCapUsd: 250, e2bCapUsd: 120, concurrency: 6 } },
+	{ id: "bar-1-openai", title: "The exam, GPT-6 Luna", model: "gpt-6-luna", provider: "openai", tools: ["relay", "codex"], run: { reps: 1, capUsd: 1, stageCapUsd: 125, e2bCapUsd: 120, concurrency: 6 } },
+	{ id: "bar-1-sonnet", title: "Spot check, 100 exam tasks, Claude Sonnet 5.5", model: "claude-sonnet-5-5", provider: "anthropic", tools: ["relay", "claude-code", "prime-agent"], sample: 100, run: { reps: 1, capUsd: 2, stageCapUsd: 300, e2bCapUsd: 120, concurrency: 4 } },
 ]);
 
 const NAMES = { "claude-code": "Claude Code", "prime-agent": "Prime Agent", hermes: "Hermes", codex: "Codex" };

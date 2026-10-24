@@ -13,13 +13,15 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
   holds every release that passed it on the exam, numbers only.
 - [results/scoreboard.json](results/scoreboard.json) is the scoreboard, rebuilt every week by
   [scripts/scoreboard.mjs](scripts/scoreboard.mjs): each tool and Relay's meta-harness on Terminal-Bench 2.1, SWE-bench
-  Verified, SWE-bench Pro and the sealed exam, per model, numbers only, model and sandbox cost apart (RUNBOOK.md, "The
-  scoreboard, every week"). `scripts/publish-scoreboard.mjs` opens the public page's pull request in
+  Verified, SWE-bench Pro, the long-context sets OOLONG and LongBench v2, and the sealed exam, per model, numbers
+  only, model and sandbox cost apart (RUNBOOK.md, "The scoreboard, every week"). `scripts/publish-scoreboard.mjs` opens the public page's pull request in
   [Relay-harness/relay](https://github.com/Relay-harness/relay); the weekly job does it only with `--publish`.
 - [results/arm-outcomes.jsonl](results/arm-outcomes.jsonl), rebuilt with it, is the same trials as evidence for Relay's
   router: `relay router learn --import results/arm-outcomes.jsonl` (RUNBOOK.md, "The router's evidence").
 - [scripts/model-watch.mjs](scripts/model-watch.mjs) examines a new model on the exam before Relay routes to it (GATE.md,
   amendment 3); a dry run unless given a spend cap.
+- [scripts/harness-watch.mjs](scripts/harness-watch.mjs) checks npm each week for a new Claude Code or Codex and queues an
+  exam stage for each new version, for a person to start; the weekly autopilot runs it.
 - [loop/](loop/) is the improvement loop: every week it proposes changes to Relay, one lane each, pre-screens them and
   writes one release for a person to open; TIERS.md says what it may see and never change.
 - [AUTOPILOT.md](AUTOPILOT.md): `node loop/autopilot.mjs` carries the week's cycle to one pull request in the harness,

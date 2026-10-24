@@ -11,6 +11,9 @@
 //
 // One week, in order; each step says ran, skipped, stopped or failed, and why:
 //   money         without --spend-cap nothing runs: it prints the most the week could cost and exits 3
+//   harnesses     free, once a week: the npm registry's latest Claude Code and Codex against the benchmark's pins and
+//                 the scoreboard; a new version gets an exam stage queued for a person, never run here
+//                 (scripts/harness-watch.mjs). Its lines go in the cycle's notes and this report
 //   pull request  last week's pull request: while it waits for a person, or is merged but in no release yet, the week
 //                 stops before anything paid (one pull request at a time; each cycle is measured against the release
 //                 that holds the one before)
@@ -28,7 +31,8 @@
 //   gate          runner/gate.mjs on the exam (PAID): the local build against the champion, look by look within the cap,
 //                 --combined when the release holds two lanes or more
 //   ledger        on PASS only: scripts/ledger.mjs write, which reads the gate again from its records
-//   pull request  on PASS only: the branch pushed and a pull request opened in the harness, label no-linear
+//   pull request  on PASS only: the branch pushed and a pull request opened in the harness, label no-linear; its
+//                 body opens with what Relay learned this week (loop/learned.mjs), with the gate's numbers
 // On BLOCK or UNRESOLVED it writes the report and opens nothing. It never merges, releases or publishes.
 //
 // Output: <out>/<cycle>/autopilot/report.md (plain words, numbers only for results), state.json, PR_BODY.md; and
@@ -45,11 +49,13 @@ import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
 import { isLocalBuild, providerOf, RELAY_VERSION_PATTERN } from "../runner/arms.mjs";
 import { readTasks } from "../runner/stage-tasks.mjs";
 import { approvalProblems } from "../scripts/approve-task.mjs";
+import { triedThisWeek, watchHarnesses } from "../scripts/harness-watch.mjs";
 import { readLedger } from "../scripts/ledger.mjs";
 import { lockDifferences } from "../scripts/lock-tasks.mjs";
 import { addWorktree, applyPatch, BuildError, buildEnv, buildRelay, buildVersion, commitTree, freeGb, keepPackage, linkNodeModules, sh, sha256File } from "./build.mjs";
 import { isoWeek, runCycle } from "./cycle.mjs";
 import { LANES } from "./lanes.mjs";
+import { learnedLines, learnedSection } from "./learned.mjs";
 import { loadSettings, PAID_LANES, SETTINGS_PATH } from "./meta.mjs";
 import { describeChange } from "./package.mjs";
 import { crontabLine, LABEL, plist, plistPath, scheduleArgs } from "./schedule.mjs";
@@ -80,6 +86,7 @@ export const DEFAULTS = Object.freeze({
 	settingsPath: SETTINGS_PATH,
 	harness: resolve(ROOT, "..", "prime-agent-main"),
 	exam: resolve(ROOT, "..", "relay-exam"),
+	scoreboard: join(ROOT, "results", "scoreboard.json"),
 	repo: HARNESS_REPO,
 	model: "gpt-6-luna",
 	label: "no-linear",
@@ -297,9 +304,9 @@ export function gateLines(r) {
 }
 
 /** The pull request's body: the package's PR_BODY.md, then what the autopilot measured and wrote. Numbers only. */
-export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir, spend }) {
+export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir, spend, learned = [] }) {
 	const cut = prBody.indexOf("\n## How it is judged");
-	const head = (cut === -1 ? prBody : prBody.slice(0, cut)).trimEnd();
+	const head = withLearned((cut === -1 ? prBody : prBody.slice(0, cut)).trimEnd(), learned);
 	const gateCmd = [
 		`node runner/gate.mjs --test gate-${st.build} --champion ${st.champion} --candidate ${st.build} \\`,
 		`  --candidate-package runs/loop/${cycle}/release/relay-${st.build}.tgz --tier exam \\`,
@@ -351,11 +358,31 @@ export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir,
 	return L.join("\n");
 }
 
+/**
+ * The package's body with its "What Relay learned this week" section said again with the gate's numbers (loop/learned.mjs),
+ * or added before the changes when the package has none.
+ */
+export function withLearned(body, learned) {
+	if (!learned?.length) return body;
+	const section = learnedSection(learned).join("\n");
+	const at = body.indexOf("## What Relay learned this week");
+	if (at !== -1) {
+		const next = body.indexOf("\n## ", at + 1);
+		return `${body.slice(0, at)}${section}${next === -1 ? "" : body.slice(next)}`;
+	}
+	const changes = body.indexOf("## The changes");
+	return changes === -1 ? `${body}\n\n${section}` : `${body.slice(0, changes)}${section}\n${body.slice(changes)}`;
+}
+
+/** The harness versions this week tried for the first time, in words, for the release's lines; null when none was checked. */
+const harnessWords = (st, o) => (st.harnesses ? triedThisWeek(st.harnesses, { examDir: o.exam }).map((t) => t.words) : null);
+
 /** The week in plain words: what Relay learned about itself, what it proposed, tested and spent, and whether a pull request waits. */
 export function weeklyReport({ cycle, steps, cs, st, g, o, exitCode }) {
 	const L = [`# Relay autopilot, week ${cycle}`, ""];
 	const pr = g.prs.find((p) => p.cycle === cycle && p.url);
 	L.push(pr ? `**A pull request waits for you:** ${pr.url}. Merging it is the one step; the autopilot never merges or releases.` : `**No pull request this week.** ${steps.at(-1)?.why ?? ""}`, "");
+	if (pr && st.learned?.length) L.push(`It says: ${st.learned.join(" ")}`, "");
 	const a = cs?.analysis;
 	L.push("## What Relay learned about itself", "");
 	if (!a) L.push("Nothing was studied this week.");
@@ -374,6 +401,9 @@ export function weeklyReport({ cycle, steps, cs, st, g, o, exitCode }) {
 	if (cs?.refused?.length) L.push("", `${plural(cs.refused.length, "proposal")} broke a rule of its lane and ${cs.refused.length === 1 ? "was" : "were"} refused.`);
 	const early = steps.some((s) => s.step === "ready" && s.status === "stopped");
 	if (cs?.waitingWrites?.length) L.push("", `${plural(cs.waitingWrites.length, "written change")} waited${early ? " for the paid steps" : `: ${cs.waitingWrites[0].why}`}.`);
+	L.push("", "## New harness versions", "");
+	if (!st.harnesses) L.push("Not checked this week.");
+	else for (const line of st.harnesses.lines) L.push(`- ${line}.`);
 	L.push("", "## What it tested", "");
 	const builds = Object.entries(st.builds ?? {});
 	if (builds.length) L.push(`Builds: ${builds.filter(([, b]) => b.status === "built").length} of ${builds.length} built${builds.some(([, b]) => b.status === "failed") ? `; failed: ${builds.filter(([, b]) => b.status === "failed").map(([id, b]) => `${id} (${b.why.split("\n")[0]})`).join("; ")}` : ""}.`);
@@ -450,6 +480,17 @@ export async function runWeek(options, ops) {
 	}
 	if (!(o.spendCap > 0)) throw new Error("--spend-cap is a number of dollars above 0");
 
+	// harnesses: free, once a week. A new Claude Code or Codex gets an exam stage queued for a person; nothing runs.
+	if (!st.harnesses && ops.fetch) {
+		try {
+			st.harnesses = await watchHarnesses({ fetch: ops.fetch, examDir: o.exam, scoreboardPath: o.scoreboard, week: cycle, now });
+		} catch (error) {
+			done("harnesses", "failed", `the harness watch stopped (${error.message}); the week goes on without it`);
+		}
+	}
+	if (st.harnesses) done("harnesses", "ran", st.harnesses.lines.join("; "));
+	else if (!ops.fetch) done("harnesses", "skipped", "no way to read the npm registry was given, so no harness version was checked");
+
 	// last week's pull request
 	try {
 		for (const rec of g.prs) checkPullRequest(rec, g, o, ops);
@@ -508,6 +549,8 @@ export async function runWeek(options, ops) {
 			exam: o.exam,
 			teaching: o.teaching ?? null,
 			armOutcomes: o.armOutcomes ?? null,
+			notes: st.harnesses?.lines ?? [],
+			harnesses: harnessWords(st, o),
 			packages: join(dir, "packages"),
 			ledgerPath: o.ledgerPath,
 			spendCap,
@@ -719,7 +762,11 @@ export async function runWeek(options, ops) {
 		const cycleSpent = st.spend.filter((e) => e.step === "cycle").reduce((s, e) => s + e.usd, 0);
 		const gateSpent = st.spend.filter((e) => e.step === "gate").reduce((s, e) => s + e.usd, 0);
 		const sandbox = st.spend.reduce((s, e) => s + (e.sandboxUsd ?? 0), 0);
-		const body = pullRequestBody({ prBody, st, result, ledgerLine: st.ledger.line, o, cycle, dir, spend: { total: cycleSpent + gateSpent, cycle: cycleSpent, gate: gateSpent, sandbox } });
+		// What Relay learned this week, said again with the gate's numbers.
+		const cs = readJson(join(dir, "cycle.json"));
+		const chosen = (cs?.package?.lanes ?? []).map((l) => (cs.proposals ?? []).find((p) => p.id === l.change.replace(/^loop:[^:]+:/, ""))).filter(Boolean);
+		st.learned = learnedLines({ cycle, chosen, results: Object.values(cs?.prescreen?.results ?? {}), gate: result, champion: st.champion, harnesses: harnessWords(st, o) });
+		const body = pullRequestBody({ prBody, st, result, ledgerLine: st.ledger.line, o, cycle, dir, spend: { total: cycleSpent + gateSpent, cycle: cycleSpent, gate: gateSpent, sandbox }, learned: st.learned });
 		const bodyPath = join(apDir, "PR_BODY.md");
 		writeFileSync(bodyPath, body);
 		const title = (prBody.split("\n")[0] ?? `Relay loop, cycle ${cycle}`).replace(/^#\s*/, "");
@@ -778,6 +825,8 @@ export function realOps({ log = (line) => console.log(line) } = {}) {
 		log,
 		link: linkNodeModules,
 		env: process.env,
+		// The harness watch's one network read: the npm registry, free and read-only.
+		fetch: globalThis.fetch,
 	};
 }
 
@@ -807,6 +856,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			"tasks-dir": { type: "string", multiple: true },
 			teaching: { type: "string" },
 			"arm-outcomes": { type: "string" },
+			scoreboard: { type: "string" },
 			champion: { type: "string" },
 			cycle: { type: "string" },
 			out: { type: "string" },
@@ -831,6 +881,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		...(values.out ? { out: resolve(values.out) } : {}),
 		...(values.work ? { work: resolve(values.work) } : {}),
 		...(values.settings ? { settingsPath: resolve(values.settings) } : {}),
+		...(values.scoreboard ? { scoreboard: resolve(values.scoreboard) } : {}),
 		records: (values.records ?? inputs.records).map((p) => resolve(p)),
 		tasksDirs: (values["tasks-dir"] ?? inputs.tasksDirs).map((p) => resolve(p)),
 		teaching: values.teaching ? resolve(values.teaching) : null,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ARMS, armFor, armRuns, providerOf, relayInstallCommand, saidDone } from "./arms.mjs";
+import { ARMS, armFor, armRuns, providerOf, relayInstallCommand, saidDone, TOOL_PACKAGES, toolInstallCommand } from "./arms.mjs";
 
 test("a plain tool name is that tool's arm", () => {
 	assert.equal(armFor("claude-code").arm, ARMS["claude-code"]);
@@ -23,6 +23,25 @@ test("anything else is refused", () => {
 	for (const name of ["relay@latest", "relay@0.6", "relay@0.6.121; rm -rf /", "hermes@1.0.0", "nobody"]) {
 		assert.equal(armFor(name), null, name);
 	}
+});
+
+test("claude-code@<version> and codex@<version> are that harness at a published version, installed for the run", () => {
+	const cc = armFor("claude-code@2.1.310");
+	assert.equal(cc.arm, ARMS["claude-code"]);
+	assert.equal(cc.base, "claude-code");
+	assert.equal(cc.toolVersion, "2.1.310");
+	assert.equal(cc.relayVersion, null);
+	assert.equal(armFor("codex@0.164.0").arm, ARMS.codex);
+	for (const name of ["claude-code@latest", "claude-code@2.1", "codex@0.164.0-alpha.1", "codex@0.164.0 && curl evil"]) assert.equal(armFor(name), null, name);
+	// Installed over the image's own with npm, and read back from what the harness prints.
+	assert.equal(toolInstallCommand("claude-code", "2.1.310"), "npm install -g --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@2.1.310 && claude --version 2>&1");
+	assert.match(toolInstallCommand("codex", "0.164.0"), /@openai\/codex@0\.164\.0 && codex --version 2>&1$/);
+	assert.equal(TOOL_PACKAGES.codex.printed("0.164.0"), "codex-cli 0.164.0");
+	assert.throws(() => toolInstallCommand("claude-code", "2.1.310; rm -rf /"));
+	assert.throws(() => toolInstallCommand("hermes", "1.0.0"));
+	// Its own claim of being done is read as the harness's.
+	assert.equal(saidDone("claude-code@2.1.310", { exitCode: 0, stdout: '{"type":"result","subtype":"success","is_error":false}' }), true);
+	assert.equal(armRuns(armFor("codex@0.164.0").arm, "gpt-6-luna"), true);
 });
 
 test("the install command takes only a released version", () => {

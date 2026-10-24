@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The scoreboard: one file, results/scoreboard.json, that says how Relay's meta-harness and each single tool score on
-// every public benchmark the bench runs (Terminal-Bench 2.1, SWE-bench Verified, SWE-bench Pro) and on Relay's sealed
-// exam, per benchmark and model, rebuilt every week from the records those runs left. Numbers only.
+// every public benchmark the bench runs (Terminal-Bench 2.1, SWE-bench Verified, SWE-bench Pro, and the two
+// long-context sets, OOLONG and LongBench v2) and on Relay's sealed exam, per benchmark and model, rebuilt every week
+// from the records those runs left. Numbers only.
 //
 // - Every number comes from the trials' own records (runner/harbor-bench.mjs, runner/tb21.mjs, runner/run-stage.mjs) by
 //   PREREGISTRATION.md's rules: the task is the unit, a tool's score on a task is its mean over that task's trials, and
@@ -11,7 +12,11 @@
 //   attempts (meta/pick-groups.mjs), never seeing a grade. Its cost is every attempt's plus the picker's; picker answers
 //   are read from each stage's picks file and never asked for here, so building the scoreboard costs nothing. Groups
 //   the picker has not answered yet are counted, not guessed.
-// - The sealed exam (TIERS.md) is published as counts and scores only: no task names, no per-task numbers.
+// - The sealed exam (TIERS.md) is published as counts and scores only: no task names, no per-task numbers. A harness
+//   version harness watch queued (scripts/harness-watch.mjs) is its own run beside the bar's stages.
+// - OOLONG and LongBench v2 (round 1's test G, runner/longctx.mjs) are two benchmarks, each with its own measure (its
+//   own published scorer's score), from the same records runner/longctx-analyze.mjs reads; an item is a task. Their
+//   attempts are one printed answer each, which the picker does not read, so the meta-harness is not scored on them.
 // - No words for results: no "better", "worse" or "beats", only each number and its interval.
 //
 // - Each build also writes results/arm-outcomes.jsonl (scripts/arm-outcomes.mjs): the same public trials and picker
@@ -37,9 +42,10 @@ import { BENCHMARKS, HARBOR_VERSION, loadBenchmark } from "../runner/harbor-benc
 import { metaOf, sizeFactor } from "../runner/task-meta.mjs";
 import { E2B_USD_PER_SECOND } from "./draft-spend.mjs";
 import { BAR_STAGES } from "./export-bar.mjs";
-import { picksFor, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
+import { harnessStageOf } from "./harness-watch.mjs";
+import { LONG_CONTEXT_SOURCES, picksFor, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
 
-export { picksFor, SCANNED, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
+export { LONG_CONTEXT_SOURCES, picksFor, SCANNED, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 export const REPOSITORY = "https://github.com/cicada0007/relay-bench";
@@ -143,13 +149,13 @@ export function difference(a, b) {
  * differences: the meta-harness minus each tool, and Relay minus each other tool. `loader` reads an attempt's evidence
  * for the picker's input; `reuse` holds the picker answers this run may count; nothing is asked.
  */
-export async function scoreRun({ records, loader, reuse = [], planned = null, sealed = false, benchmark = undefined }) {
+export async function scoreRun({ records, loader, reuse = [], planned = null, sealed = false, benchmark = undefined, meta = true }) {
 	const dropped = droppedTasks(records);
 	const counted = records.filter((r) => !dropped.includes(r.task));
 	const tools = [...new Set(counted.map((r) => r.tool))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 	const entries = tools.map((tool) => toolEntry(tool, counted.filter((r) => r.tool === tool), benchmark));
 	const scores = new Map(tools.map((tool) => [tool, taskScores(counted.filter((r) => r.tool === tool).map((r) => ({ task: r.task, value: outcomeOf(r) })))]));
-	if (tools.length >= 2) {
+	if (meta && tools.length >= 2) {
 		const arms = defaultArms(counted);
 		const { groups } = buildGroups(records, arms);
 		const picked = await runPicks({ groups, loader, reuse, ask: "split", dryRun: true, log: () => {} });
@@ -231,6 +237,88 @@ export async function publicBenchmark(id, runsDir, sources = [...SOURCES, ...sca
 	return out;
 }
 
+const MANIFEST = join(ROOT, "runner", "longctx-manifest.json");
+const short = (sha) => `${sha.slice(0, 8)}…`;
+/** The image's pin of each tool (sandbox/template.mjs PINS, kept in each run's record), by the key it has there. */
+const PIN_KEYS = { relay: "relay", "claude-code": "claudeCode", "prime-agent": "primeAgent", hermes: "hermes", codex: "codex" };
+
+/**
+ * The long-context sets (round 1's test G, RUNBOOK.md "Test G"), each a benchmark with its own measure. `about` says
+ * where each comes from and how it is scored, from the committed manifest (runner/longctx-manifest.json).
+ */
+export const LONG_CONTEXT = Object.freeze({
+	oolong: {
+		title: "OOLONG (yahoo, 128k)",
+		measure: "OOLONG score",
+		about: (m) =>
+			`OOLONG-synth (\`${m.source.dataset}\` at revision ${short(m.source.revision)}), the test split's yahoo rows with a 131,072-token context: all ${m.population} of them. Each tool gets the context as a file in a fresh sandbox and the benchmark's own question, in its own non-interactive mode on the same model and meter; its final answer is scored by OOLONG's published scorer (abertsch72/oolong at ${short(m.scorer.commit)}), and no model judges. The measure is OOLONG's own score: 1 for the answer, 0.75 to the power of the distance for a number that is off, else 0. The meta-harness is not scored here: its picker reads a change or a terminal's actions, and these attempts are one printed answer each.`,
+	},
+	longbench: {
+		title: "LongBench v2",
+		measure: "accuracy",
+		about: (m, n) =>
+			`LongBench v2 (\`zai-org/LongBench-v2\` at revision ${short(m.source.revision)}, data.json sha256 ${short(m.source.sha256)}): ${n} of its ${m.population} questions, drawn once and committed (runner/longctx-manifest.json: ascending ids, a shuffle seeded 20261015, the first ${n}). Each tool gets the text as a file in a fresh sandbox and the benchmark's own question, in its own non-interactive mode on the same model and meter; its final answer is scored by LongBench's published answer extraction and accuracy (THUDM/LongBench at ${short(m.scorer.commit)}), uncompensated, and no model judges. The measure is accuracy: the share of questions whose chosen letter is the answer. The meta-harness is not scored here: its picker reads a change or a terminal's actions, and these attempts are one printed answer each.`,
+	},
+});
+
+/**
+ * A test G record in the scoreboard's terms: the item is the task, one trial per item, the benchmark's own score as
+ * the grade (outcomeOf reads score.share), and the tool's version from the image's pins the run kept.
+ */
+export function longContextRecord(r) {
+	const version = r.pins?.[PIN_KEYS[r.tool]] ?? null;
+	return {
+		...r,
+		task: r.item,
+		rep: r.rep ?? 1,
+		score: { share: typeof r.score === "number" ? r.score : 0 },
+		infra: r.infra === true,
+		stoppedAtCap: (r.usage?.refusedAtCap ?? 0) > 0,
+		sandbox: undefined,
+		sandboxId: r.sandbox ?? null,
+		...(version ? { agent: { name: r.tool, version } } : {}),
+	};
+}
+
+/** One long-context set: every run of it in the long-context stages, single tools only. */
+export async function longContextBenchmark(set, runsDir, sources = LONG_CONTEXT_SOURCES, manifestPath = MANIFEST) {
+	const def = LONG_CONTEXT[set];
+	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+	const m = manifest.sets[set];
+	const out = {
+		id: set,
+		title: def.title,
+		kind: "public",
+		about: def.about(m, manifest.sampleSize),
+		dataset: `${m.source.dataset.split(" ")[0]}@${m.source.revision}`,
+		datasetRevision: m.source.revision,
+		scorer: `${m.scorer.repo}@${m.scorer.commit}`,
+		runner: "runner/longctx.mjs",
+		tasksInSet: m.population,
+		measure: def.measure,
+		metaHarness: "not scored",
+		runs: [],
+	};
+	const order = m.items.map((i) => i.id);
+	for (const source of sources) {
+		const records = readJsonl(join(runsDir, source.stage, "records.jsonl"))
+			.filter((r) => r.set === set)
+			.map(longContextRecord);
+		for (const [, rs] of runsOf(records)) {
+			const { test, model } = rs[0];
+			// A counted test G runs the manifest's first 50 items of each set, or its first 25 if the round shrank.
+			const last = Math.max(...rs.map((r) => order.indexOf(r.task)));
+			const perSet = last < 25 && last >= 0 ? 25 : manifest.sampleSize;
+			const planned = order.slice(0, perSet);
+			const result = await scoreRun({ records: rs, loader: null, planned, benchmark: set, meta: false });
+			out.runs.push({ test, label: source.label ?? test, model, modelName: MODEL_NAMES[model] ?? model, ...(m.population > planned.length ? { sample: planned.length } : {}), ...result });
+		}
+	}
+	out.runs.sort(byModel);
+	out.status = out.runs.length === 0 ? "not run yet" : out.runs.every((r) => r.status === "complete") ? "complete" : "in progress";
+	return out;
+}
+
 /** Relay's sealed exam: the bar's stages (RUNBOOK.md, "The bar"), numbers only, no task names. */
 export async function examBenchmark(examDir) {
 	const out = {
@@ -245,11 +333,20 @@ export async function examBenchmark(examDir) {
 	const tasksDir = join(examDir, "tasks");
 	if (existsSync(join(runsDir, "records.jsonl"))) {
 		const reuse = readJsonl(join(runsDir, "meta", `picks-${PICKER_MODEL}-${PICKER_EFFORT}.jsonl`));
-		for (const stage of BAR_STAGES) {
-			const records = loadRecords(runsDir, stage.id);
+		// The bar's stages, then each harness version harness watch queued, in its own stage beside them.
+		const watched = [...new Set(readJsonl(join(runsDir, "records.jsonl")).map((r) => r.test))]
+			.map((test) => ({ test, of: harnessStageOf(test) }))
+			.filter((w) => w.of)
+			.sort((a, b) => a.test.localeCompare(b.test));
+		const stages = [
+			...BAR_STAGES.map((stage) => ({ test: stage.id, stage, label: stage.title })),
+			...watched.map((w) => ({ test: w.test, stage: w.of.stage, label: `${w.of.stage.title}, ${TOOL_NAMES[w.of.tool]} ${w.of.version}` })),
+		];
+		for (const { test, stage, label } of stages) {
+			const records = loadRecords(runsDir, test);
 			if (!records.length) continue;
 			const result = await scoreRun({ records, loader: patchLoader(runsDir, [tasksDir]), reuse, sealed: true, benchmark: "exam" });
-			out.runs.push({ test: stage.id, label: stage.title, model: stage.model, modelName: MODEL_NAMES[stage.model] ?? stage.model, ...(stage.sample ? { sample: stage.sample } : {}), ...result });
+			out.runs.push({ test, label, model: stage.model, modelName: MODEL_NAMES[stage.model] ?? stage.model, ...(stage.sample ? { sample: stage.sample } : {}), ...result });
 		}
 	}
 	out.runs.sort(byModel);
@@ -267,9 +364,10 @@ export function weekRows(week, benchmarks) {
 }
 
 /** The whole scoreboard. `previous` is last week's file: its history is carried, this week's lines replaced. */
-export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), generatedAt = new Date().toISOString(), commit = null, previous = null, sources = [...SOURCES, ...scannedSources(runsDir)] }) {
+export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), generatedAt = new Date().toISOString(), commit = null, previous = null, sources = [...SOURCES, ...scannedSources(runsDir)], longContextSources = LONG_CONTEXT_SOURCES }) {
 	const benchmarks = [];
 	for (const id of Object.keys(BENCHMARKS)) benchmarks.push(await publicBenchmark(id, runsDir, sources));
+	for (const set of Object.keys(LONG_CONTEXT)) benchmarks.push(await longContextBenchmark(set, runsDir, longContextSources));
 	benchmarks.push(await examBenchmark(examDir));
 	const history = [...(previous?.history ?? []).filter((h) => h.week !== week), ...weekRows(week, benchmarks)].sort((a, b) => a.week.localeCompare(b.week));
 	return {
@@ -287,7 +385,7 @@ export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), gene
 			sameModel: "Every entry in a run uses the same model, tasks, limits and meter. Claude Code runs Anthropic models and Codex OpenAI models, so each is in the runs of its own provider's models.",
 		},
 		measures: {
-			score: "Solved (Terminal-Bench), resolved (SWE-bench) or requirements met (the exam), percent.",
+			score: "Solved (Terminal-Bench), resolved (SWE-bench), OOLONG's own score (OOLONG: 1 for the answer, 0.75 to the power of the distance for a number that is off, else 0), accuracy (LongBench v2: the chosen letter is the answer) or requirements met (the exam), percent.",
 			allTrialsSolved: "The share of tasks where every trial succeeded, percent.",
 			costUsd: "Metered model spend of every trial counted, in dollars.",
 			sandboxUsd: "Sandbox time of every trial counted, apart from the model spend, at E2B's published price per second for 2 vCPU and 4 GiB (more for a task that asks for a larger sandbox), in dollars; for the meta-harness, every attempt of its groups. A trial that did not record its sandbox time is estimated from its start and end (sandboxEstimatedTrials).",

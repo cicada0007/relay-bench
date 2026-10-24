@@ -186,11 +186,33 @@ export function modelArm(version, tier, model) {
 }
 
 /**
+ * The harnesses that run beside Relay at a version of their own (harness watch, scripts/harness-watch.mjs): the npm
+ * package each one ships as, the command it installs, and what `<command> --version` prints for a version. The round's
+ * image installs each at its pin (sandbox/template.mjs) with npm, as root.
+ */
+export const TOOL_PACKAGES = Object.freeze({
+	"claude-code": { npm: "@anthropic-ai/claude-code", command: "claude", printed: (version) => version },
+	codex: { npm: "@openai/codex", command: "codex", printed: (version) => `codex-cli ${version}` },
+});
+/** A published harness version, as npm's dist-tags give it: 2.1.310. */
+export const TOOL_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+
+/** The command that installs one published version of a harness over the image's own, as root, and prints it. */
+export function toolInstallCommand(tool, version) {
+	const pkg = TOOL_PACKAGES[tool];
+	if (!pkg) throw new Error(`no harness package for ${tool}`);
+	if (!TOOL_VERSION_PATTERN.test(version ?? "")) throw new Error(`not a published ${tool} version: ${version}`);
+	return `npm install -g --no-fund --no-audit --loglevel=error ${pkg.npm}@${version} && ${pkg.command} --version 2>&1`;
+}
+
+/**
  * The arm for a tool name. `relay@<version>` is Relay at that released version, installed for the run (GATE.md); the
  * gate compares two of them. `relay@<version>+<tier>+<model>` is the same Relay with another model on that tier (model
  * watch), and `override` says which. `relay@pkg` is Relay from --relay-package, for pre-screens only. A local build,
  * `relay@0.6.122-loop.2026w44`, is Relay from --relay-package too, and the only package a counted gate may judge
- * (`localBuild` names its version). Every other name is an arm of ARMS as it is.
+ * (`localBuild` names its version). `claude-code@<version>` and `codex@<version>` are that harness at a published
+ * version other than the image's pin, installed for the run (harness watch; `toolVersion` names it). Every other name
+ * is an arm of ARMS as it is.
  */
 export function armFor(tool) {
 	const at = tool.indexOf("@");
@@ -200,6 +222,7 @@ export function armFor(tool) {
 	}
 	const base = tool.slice(0, at);
 	const spec = tool.slice(at + 1);
+	if (TOOL_PACKAGES[base]) return TOOL_VERSION_PATTERN.test(spec) ? { arm: ARMS[base], base, relayVersion: null, relayPackage: false, toolVersion: spec } : null;
 	if (base !== "relay") return null;
 	if (spec === "pkg") return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true };
 	if (isLocalBuild(spec)) return { arm: ARMS.relay, base, relayVersion: null, relayPackage: true, localBuild: spec };

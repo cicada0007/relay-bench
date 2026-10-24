@@ -216,7 +216,29 @@ Then it writes the result as a small hashed file, `../relay-exam/runs/model-watc
 `~/.relay/agent/model-watch/exams/` (`--relay-dir` for another machine's folder, `none` to skip), where Relay reads it:
 a PASS lets routing use the model, anything else keeps it out. A model's exam never goes in the ledger.
 
-## Growing the exam
+### A new harness: harness watch
+
+A new Claude Code or Codex is tried on the exam the week it comes out, the way model watch tries a new model. Free:
+it reads each package's latest version from the npm registry (`@anthropic-ai/claude-code` and `@openai/codex`, one
+read-only request each) and compares it with the version the benchmark pins (`harbor-agents/relay_bench_agents.py`,
+the same as `sandbox/template.mjs`) and the versions the scoreboard shows:
+
+```
+node scripts/harness-watch.mjs --dry-run      # what is new, and the plan for each new version; queues nothing
+node scripts/harness-watch.mjs                # the same, and each new version's plan queued for a person
+```
+
+For a version newer than the pin that the scoreboard does not show and no earlier week queued, it plans one exam
+stage: the bar's stage that harness runs in ("The bar", below: Claude Code in `bar-1-haiku`, Codex in
+`bar-1-openai`), with that stage's model, tasks, repetitions, caps and Relay, and the new version as
+`claude-code@<version>` or `codex@<version>` (each run installs that version over the image's own, so the image is not
+built again). The stage has its own name, such as `bar-1-haiku-claude-code-2.1.310`, so it has its own stage cap, and
+its records go in `../relay-exam/runs/bar` beside the bar's, where the scoreboard shows it as its own run. The plan is
+one line of `../relay-exam/queue/harness-watch.jsonl`: the smoke run (about $0.20), the stage's command and the most
+it could cost. Nothing paid starts here: a person runs the smoke, then the stage (every exam run counts against the
+leak budget, as in the bar). The weekly autopilot runs the same check once a week and puts its lines in the week's
+notes (`runs/loop/<week>/report.md`) and report.
+
 
 **Not yet run.** Every command below is built and tested on recorded and made-up data only. TIERS.md says how a task is
 made and why. Run from this folder, with the private exam repository checked out beside it at `../relay-exam`. The
@@ -345,7 +367,7 @@ the same command again to resume: the week's analysis and proposals are fixed at
 | propose | one change per lane, checked against its lane and the invariants | the writer lanes only |
 | exam | kinds of task the exam should mine more of, into `../relay-exam/queue/loop-proposals.jsonl` for a person | no |
 | prescreen | each proposal's build against the champion: the dev set (practice), then the check tier's one word | yes |
-| package | one combined release: `PR_BODY.md`, `release.patch`, `lanes.json`, `ledger-preview.json` | no |
+| package | one combined release: `PR_BODY.md` (opening with what Relay learned this week, in one or two plain sentences), `release.patch` (with the release's changelog fragment), `lanes.json`, `ledger-preview.json` | no |
 
 The lanes, each with a fixed budget per cycle in `loop/settings.json` (estimates for the founders to confirm):
 
@@ -543,6 +565,13 @@ Found in Harbor's registry on 24 Oct 2026 with Harbor 0.24.0 (`harbor version li
 | SWE-bench Verified | `swe-bench/swe-bench-verified@sha256:b934b0cc…` (revision 2) | 500 | `runner/swebench-verified-tasks.json` |
 | SWE-bench Pro | `scale-ai/swe-bench-pro@sha256:88411d32…` (revision 2) | 731 | `runner/swebench-pro-tasks.json` |
 
+The two long-context sets of test G, OOLONG (yahoo, 128k) and LongBench v2, are on the scoreboard too, each as a
+benchmark with its own measure: OOLONG's own score (1 for the answer, 0.75 to the power of the distance for a number
+that is off, else 0) and LongBench v2's accuracy, from `runs/round-1/G/records.jsonl` and the committed manifest
+(`runner/longctx-manifest.json`), as `runner/longctx-analyze.mjs` reads them; an item is a task. They run through
+`runner/longctx.mjs`, not Harbor ("Test G" above). Each attempt is one printed answer, which the picker does not read,
+so the meta-harness is not scored on them.
+
 SWE-bench Verified is the `swe-bench` organisation's own package and SWE-bench Pro is `scale-ai`'s, the benchmark's
 authors; the registry also holds third-party copies (`nanoswe/swe-bench-verified`, `cais/swebenchpro`), which are not
 used. **Terminal-Bench 4.0 is not in the registry as an official release:** the `terminal-bench` organisation has
@@ -641,7 +670,8 @@ node scripts/scoreboard.mjs                # writes results/scoreboard.json for 
 node scripts/scoreboard.mjs --install-schedule weekly    # every Monday at 07:00 (macOS launchd; prints a crontab line)
 ```
 
-It reads `runs/round-1/F/`, every stage under `runs/scoreboard/`, and the bar's stages in `../relay-exam/runs/bar/`. It
+It reads `runs/round-1/F/` and `runs/round-1/G/`, every stage under `runs/scoreboard/`, and the bar's stages in
+`../relay-exam/runs/bar/` (with each harness version harness watch queued, as its own run). It
 never runs a trial or asks the picker, so the weekly job costs nothing; the week's numbers change when a person runs a
 stage or the picker with a cap. Each entry's `sandboxUsd` is its trials' sandbox time at E2B's price, apart from the
 model's `costUsd`: as the runner recorded it, or for a trial that recorded none (round 1's), estimated from its start
