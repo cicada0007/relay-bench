@@ -165,7 +165,7 @@ test("a trial is stopped at its sandbox cap and recorded with its sandbox cost b
 		await withKeys(() =>
 			runStage(
 				{ bench: "terminal-bench-2-1", test: "dev-sandbox", tasks: tasks.join(","), tools: "relay", model: "claude-haiku-5-5", trials: "1", "cap-usd": "1", "stage-cap-usd": "5", "e2b-cap-usd": "1", "e2b-trial-cap-usd": "0.0001", out, concurrency: "2" },
-				{ harbor, log: quiet, hardStopMs: 10_000 },
+				{ harbor, log: quiet, hardStopMs: 500 },
 			),
 		);
 		const stage = join(ROOT, out, "dev-sandbox");
@@ -176,10 +176,11 @@ test("a trial is stopped at its sandbox cap and recorded with its sandbox cost b
 		assert.ok(solved.sandbox.usd > 0 && solved.sandbox.usd < 0.0001);
 		assert.equal(solved.sandbox.capUsd, 0.0001);
 		const capped = records.get(tasks[1]);
-		assert.equal(capped.stoppedAtSandboxCap, true, "stopped at 2 seconds, what $0.0001 buys");
+		assert.equal(capped.stoppedAtSandboxCap, true, "interrupted within the 2 seconds $0.0001 buys, leaving Harbor its time to stop");
 		assert.equal(capped.infra, false);
 		assert.equal(capped.exception, "CancelledError");
-		assert.ok(capped.sandbox.seconds >= 2 && capped.sandbox.seconds < 10, `${capped.sandbox.seconds}`);
+		assert.ok(capped.sandbox.seconds >= 1.5 && capped.sandbox.seconds < 10, `${capped.sandbox.seconds}`);
+		assert.ok(capped.sandbox.usd <= 0.0001, "the trial's cap holds, Harbor's shutdown included");
 		assert.ok(Math.abs(capped.sandbox.usd - capped.sandbox.seconds * E2B_USD_PER_SECOND) < 1e-5);
 		const spend = readJsonl(join(stage, "spend.jsonl"));
 		assert.equal(spend.length, 2, "a trial stopped at its cap is not run again");
@@ -197,14 +198,14 @@ test("a stage stops before its sandboxes could pass their cap, and at once when 
 		const harbor = fakeHarbor(Object.fromEntries(tasks.map((t) => [t, "hang"])));
 		const result = await withKeys(() =>
 			runStage(
-				{ bench: "terminal-bench-2-1", test: "dev-stage-cap", tasks: tasks.join(","), tools: "relay", model: "claude-haiku-5-5", trials: "1", "cap-usd": "1", "stage-cap-usd": "5", "e2b-cap-usd": "0.00025", "e2b-trial-cap-usd": "0.0001", out, concurrency: "1" },
-				{ harbor, log: (l) => lines.push(l), hardStopMs: 10_000 },
+				{ bench: "terminal-bench-2-1", test: "dev-stage-cap", tasks: tasks.join(","), tools: "relay", model: "claude-haiku-5-5", trials: "1", "cap-usd": "1", "stage-cap-usd": "5", "e2b-cap-usd": "0.00024", "e2b-trial-cap-usd": "0.0001", out, concurrency: "1" },
+				{ harbor, log: (l) => lines.push(l), hardStopMs: 500 },
 			),
 		);
-		assert.match(result.stopped, /the next trial could take the stage's sandboxes past their \$0\.00025 cap/);
+		assert.match(result.stopped, /the next trial could take the stage's sandboxes past their \$0\.00024 cap/);
 		const records = readJsonl(join(ROOT, out, "dev-stage-cap", "records.jsonl"));
-		assert.equal(records.length, 2, "two trials at their $0.0001 cap fit $0.00025; a third could pass it");
-		assert.ok(records.reduce((s, r) => s + r.sandbox.usd, 0) <= 0.00025);
+		assert.equal(records.length, 2, "two trials within their $0.0001 cap fit $0.00024; a third could pass it");
+		assert.ok(records.reduce((s, r) => s + r.sandbox.usd, 0) <= 0.00024);
 		assert.ok(lines.some((l) => /^stopped: /.test(l)));
 
 		const hard = fakeHarbor(Object.fromEntries(tasks.map((t) => [t, "hang-hard"])));

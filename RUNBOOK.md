@@ -588,9 +588,9 @@ stops at its own caps; records land in `runs/scoreboard/<bench>-<model>/`.
 - **Model spend:** `--cap-usd` a trial (the meter refuses requests past it) and `--stage-cap-usd` the stage.
 - **Sandbox time**, which E2B bills apart: `--e2b-trial-cap-usd` a trial ($0.25 unless given, about 90 minutes of a
   2 vCPU, 4 GiB sandbox; fewer minutes for a task that asks for a larger one, `runner/task-meta.json`) and
-  `--e2b-cap-usd` the stage, required for a paid run. At its trial cap Harbor is interrupted, which stops the sandbox and
-  writes the trial's result; the trial is recorded as stopped at its sandbox cap, the tool's limit once the tool had
-  started, as a spend cap is. A trial starts only while the stage's sandbox spend plus every trial in flight at its cap
+  `--e2b-cap-usd` the stage, required for a paid run. Two minutes before a trial's cap Harbor is interrupted, which
+  stops the sandbox and writes the trial's result in that time; the trial is recorded as stopped at its sandbox cap,
+  the tool's limit once the tool had started, as a spend cap is. A trial starts only while the stage's sandbox spend plus every trial in flight at its cap
   fits `--e2b-cap-usd`, and a retry only while it still fits. If Harbor does not stop within two minutes of the
   interrupt, it is killed and the stage stops at once, saying the sandbox may still be running: check E2B's dashboard.
 - Each record and `spend.jsonl` line holds the trial's sandbox seconds and dollars (`sandbox`, `sandboxUsd`) beside

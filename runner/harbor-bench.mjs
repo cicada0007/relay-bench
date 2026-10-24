@@ -21,9 +21,9 @@
 //   --stage-cap-usd; when even one more trial alone could pass it, the stage stops. Spend is the sum of every attempt's
 //   metered cost (<out>/<test>/spend.jsonl), retries included; an attempt whose meter log was lost counts as its cap.
 // - Sandbox time: E2B bills each trial's sandbox by the second (scripts/draft-spend.mjs's published price, for 2 vCPU
-//   and 4 GiB, scaled up for a task that asks for more: runner/task-meta.mjs). Each trial is stopped at
-//   --e2b-trial-cap-usd of sandbox time: Harbor is interrupted, which stops the sandbox and writes the trial's result,
-//   and the trial is recorded as stopped at its sandbox cap (the tool's limit, as the spend cap is, once the tool had
+//   and 4 GiB, scaled up for a task that asks for more: runner/task-meta.mjs). Each trial is stopped within
+//   --e2b-trial-cap-usd of sandbox time: Harbor is interrupted two minutes before the cap, which stops the sandbox and
+//   writes the trial's result in that time, and the trial is recorded as stopped at its sandbox cap (the tool's limit, as the spend cap is, once the tool had
 //   started; ours before that). A trial starts only while (sandbox spent + trials in flight x the trial cap + the trial
 //   cap) stays within --e2b-cap-usd, and a retry only while it still fits; when even one more trial alone could pass it,
 //   the stage stops. A trial's sandbox time is the whole Harbor job's, start to exit, so it never counts less than E2B
@@ -394,6 +394,8 @@ export async function runStage(args, deps = {}) {
 		const jobName = `${test}-${short(job.task)}-${job.tool}-r${job.rep}-a${n}-${Date.now().toString(36)}`;
 		const argv = harborArgv({ bench, job, provider, capUsd, jobsDir, jobName, relayVersion: args["relay-version"] ?? null });
 		const plan = sandboxPlan({ benchmark: bench.id, task: job.task, trialCapUsd: e2bTrialCap });
+		// Interrupted early enough that Harbor's own shutdown, up to `hardStopMs`, still ends within the trial's cap.
+		const stopAfterMs = Math.max(1000, Math.floor((e2bTrialCap / plan.usdPerSecond) * 1000) - hardStopMs);
 		return new Promise((resolve) => {
 			const started = new Date().toISOString();
 			const t0 = Date.now();
@@ -410,7 +412,7 @@ export async function runStage(args, deps = {}) {
 					killed = true;
 					child.kill("SIGKILL");
 				}, hardStopMs);
-			}, plan.seconds * 1000);
+			}, stopAfterMs);
 			child.stdout.on("data", (c) => (text += c));
 			child.stderr.on("data", (c) => (text += c));
 			child.on("close", (code) => {
