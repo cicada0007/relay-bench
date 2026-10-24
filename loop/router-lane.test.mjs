@@ -23,7 +23,8 @@ import { archProposal, armSetKey, matchingRow, routerCandidates, routerEvidence,
 
 const SETTINGS = JSON.parse(readFileSync(new URL("./settings.json", import.meta.url), "utf8"));
 const ROOT = new URL("..", import.meta.url).pathname;
-const HARNESS = process.env.RELAY_HARNESS_DIR ?? join(ROOT, "..", "prime-agent-main");
+// A checkout of the harness, read with git show only (RELAY_HARNESS_CHECKOUT, else beside this one); skipped without it.
+const HARNESS = process.env.RELAY_HARNESS_CHECKOUT ?? join(ROOT, "..", "prime-agent-main");
 const many = { ...SETTINGS, lanes: { ...SETTINGS.lanes, routing: { ...SETTINGS.lanes.routing, proposals: 3 } } };
 
 /** Applies a patch to the champion's files with git, as a reviewer would; returns relay.arch.json after. */
