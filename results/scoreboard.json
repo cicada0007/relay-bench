@@ -1,9 +1,9 @@
 {
   "scoreboard": 1,
   "week": "2026-W43",
-  "generatedAt": "2026-10-24T01:45:19.825Z",
+  "generatedAt": "2026-10-24T01:49:34.518Z",
   "repository": "https://github.com/cicada0007/relay-bench",
-  "commit": "35f75d99b79f8c6ba83eef1f8fd6ab73065b8ade",
+  "commit": "36f67b5658592744fcd9bcbc626eaed16ffb0c93",
   "preregistration": "https://github.com/cicada0007/relay-bench/blob/main/PREREGISTRATION.md",
   "statistics": {
     "unit": "The task. An entry's score on a task is its mean over that task's trials (the meta-harness: over that task's groups of attempts).",
@@ -185,6 +185,7 @@
       "id": "exam",
       "title": "Relay's sealed exam",
       "kind": "sealed",
+      "about": "Tasks drafted from public issues filed after the models' training cutoffs, kept in a private repository the agent that improves Relay never sees (TIERS.md). Counts and scores only: no task is named.",
       "measure": "requirements met",
       "runs": [],
       "status": "not run yet"
