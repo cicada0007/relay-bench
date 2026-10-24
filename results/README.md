@@ -1,5 +1,10 @@
 # Results
 
+`scoreboard.json` is the weekly scoreboard (`node scripts/scoreboard.mjs`; RUNBOOK.md, "The scoreboard, every week"),
+and `arm-outcomes.jsonl`, written with it, is the same public trials and picker answers as arm outcomes for Relay's
+router, one line per attempt of a run, in the format `relay router learn --import <file>` reads (RUNBOOK.md, "The
+router's evidence"). Neither names an exam task.
+
 `round-1.json` is round 1's results, as the results page at relayevals.com/ai-coding-agent-benchmark shows them.
 
 It is written by one command, from the run records in `runs/round-1/`:

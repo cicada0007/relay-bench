@@ -6,7 +6,8 @@ amendment at the end of this file, committed before the runs it affects.
 
 **Amendment 1 (gate v2) changes how the interval is computed, lets a gate look more than once, and adds safety flags,
 a leak budget, anchors and combined candidates.** Read the rules below together with it. **Amendment 4 lets a counted
-gate judge a local build that the autopilot made, by its package's hash, before anything is released.**
+gate judge a local build that the autopilot made, by its package's hash, before anything is released.** **Amendment 5
+runs both arms with the meta-harness on when a release changes the router.**
 
 ## What runs
 
@@ -281,3 +282,26 @@ budget, the pinned graders and the exit codes are this file's. `relay@pkg` stays
 build differs**, when a graded candidate run of a local build did not install the gate's package or did not print its
 version.
 
+
+### 5. The meta-harness on, for both arms, when a release changes the router (25 October 2026, before any gate run)
+
+The improvement loop's routing lane may now change the router's starting table, the share of a task's budget kept for
+checking the attempts, and the least an attempt is given (relay.arch `router.table`, `router.verifierShare`,
+`router.minArmUsd`; relay-harness D-101). Relay reads those values only while its meta-harness is on (`RELAY_META=1`,
+D-98 to D-103), which is off unless a person turns it on. A gate whose runs leave it off would see no difference at all
+and pass such a change as no worse without having measured it. This amendment says how those runs are made. Nothing
+else changes: the tasks, the anchors, the looks and their boundaries, the verdict rules and their order (the cost, time
+and false "done" limits included), the leak budget, the pinned graders and the exit codes are this file's.
+
+**In plain words**
+
+- **When.** A release that changes a value under relay.arch `router` (`loop/lanes.mjs`, `needsMetaHarness`) is
+  pre-screened and gated with `--relay-meta`. Every other release is run as before.
+- **Both arms alike.** `--relay-meta` runs every Relay run of the stage with `RELAY_META=1`, the champion's and the
+  candidate's, so everything else stays the same for both. A champion released before the meta-harness ignores it, and
+  the gate then measures the candidate with the meta-harness on against the champion without it, which is what a
+  person who turns it on would get.
+- **Fixed at the first look.** The gate keeps whether its runs have the meta-harness on in its state and refuses to
+  change it mid-gate. Each run's record says so (`relayMeta`).
+- **What a PASS means.** It says the candidate with the meta-harness on is at least as good as the champion as the
+  gate ran it; it says nothing about Relay with the meta-harness off, where the change does nothing.
