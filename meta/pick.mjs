@@ -145,6 +145,37 @@ export function stepsFromClaudeStream(text) {
 	return steps;
 }
 
+/**
+ * Actions from Codex's event stream (`codex exec --json`, Harbor's codex.txt), for a trial whose trajectory.json was not
+ * written: each finished command, file change, tool call or search. Codex's messages and reasoning are dropped.
+ */
+export function stepsFromCodexEvents(text) {
+	const steps = [];
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		let event;
+		try {
+			event = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		const item = event.type === "item.completed" ? event.item : null;
+		if (!item) continue;
+		if (item.type === "command_execution") {
+			const exit = typeof item.exit_code === "number" ? `\n(exit code ${item.exit_code})` : "";
+			steps.push({ call: `shell: ${item.command ?? ""}`, output: `${item.aggregated_output ?? ""}${exit}` });
+		} else if (item.type === "file_change") {
+			const changes = (item.changes ?? []).map((c) => `${c.kind ?? "change"} ${c.path ?? "?"}`).join(", ");
+			steps.push({ call: `file_change: ${changes}`, output: item.status ?? undefined });
+		} else if (item.type === "mcp_tool_call") {
+			steps.push({ call: describeCall(`${item.server ?? "mcp"}.${item.tool ?? "tool"}`, item.arguments ?? {}), output: item.result === undefined ? undefined : textOf(item.result?.content ?? item.result) });
+		} else if (item.type === "web_search") {
+			steps.push({ call: `web_search: ${item.query ?? ""}`, output: undefined });
+		}
+	}
+	return steps;
+}
+
 /** Files a patch changes that say nothing about whether the work is right: lockfiles and a harness's own notes. */
 const NOISE_PATH = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock)$|^\.(relay|claude|codex)\//;
 
