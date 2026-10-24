@@ -20,6 +20,8 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
   router: `relay router learn --import results/arm-outcomes.jsonl` (RUNBOOK.md, "The router's evidence").
 - [scripts/model-watch.mjs](scripts/model-watch.mjs) examines a new model on the exam before Relay routes to it (GATE.md,
   amendment 3); a dry run unless given a spend cap.
+- [scripts/harness-watch.mjs](scripts/harness-watch.mjs) checks npm each week for a new Claude Code or Codex and queues an
+  exam stage for each new version, for a person to start; the weekly autopilot runs it.
 - [loop/](loop/) is the improvement loop: every week it proposes changes to Relay, one lane each, pre-screens them and
   writes one release for a person to open; TIERS.md says what it may see and never change.
 - [AUTOPILOT.md](AUTOPILOT.md): `node loop/autopilot.mjs` carries the week's cycle to one pull request in the harness,

@@ -15,6 +15,9 @@
 //               written to files; the cycle never opens a pull request in relay-harness (the autopilot,
 //               loop/autopilot.mjs, opens one only after the gate on the exam passes)
 //
+// The autopilot also hands the cycle the week's harness watch (scripts/harness-watch.mjs): its lines join the cycle's
+// notes.
+//
 //   node loop/cycle.mjs --records runs/round-1/records.jsonl [--records runs/round-1/F/records.jsonl] \
 //     --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 \
 //     [--exam ../relay-exam] [--teaching runs/teaching] [--arm-outcomes results/arm-outcomes.jsonl] \
@@ -97,6 +100,7 @@ export async function runCycle({
 	exam = null,
 	teaching = null,
 	armOutcomes = null,
+	notes: extraNotes = [],
 	packages = null,
 	ledgerPath = undefined,
 	spendCap = null,
@@ -333,6 +337,12 @@ export async function runCycle({
 	return finish();
 
 	function finish() {
+		// The week's other notes (the autopilot's harness watch), kept with the cycle's, once each.
+		if (extraNotes.length) {
+			state.notes = [...(state.notes ?? [])];
+			for (const line of extraNotes) if (!state.notes.includes(line)) state.notes.push(line);
+			if (state.settingsHash) save();
+		}
 		const report = cycleReport({ cycle, steps, state, settings, approval, money, spendCap, dryRun });
 		if (!dryRun && state.settingsHash) {
 			mkdirSync(dir, { recursive: true });
@@ -401,7 +411,7 @@ export function cycleReport({ cycle, steps, state, settings, approval, money, sp
 		}
 		if (state.notes?.length) L.push("", `Notes: ${state.notes.join("; ")}.`);
 		L.push("");
-	}
+	} else if (state.notes?.length) L.push(`Notes: ${state.notes.join("; ")}.`, "");
 	if (state.exam?.length) {
 		L.push("## Exam proposals, for a person", "");
 		for (const e of state.exam) L.push(`- ${e.id}: mine more ${e.wanted.kind} ${e.wanted.language} tasks (level ${e.wanted.minLevel} and up). ${e.why}.`);

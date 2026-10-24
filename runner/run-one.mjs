@@ -21,7 +21,7 @@ import { gzipSync } from "node:zlib";
 import { parseArgs } from "node:util";
 import { Sandbox } from "e2b";
 import { PINS, RUN_PATH, TEMPLATE_NAME } from "../sandbox/template.mjs";
-import { ARMS, armFor, armRuns, providerOf, REQUEST, relayInstallCommand, saidDone, WORK } from "./arms.mjs";
+import { ARMS, armFor, armRuns, providerOf, REQUEST, relayInstallCommand, saidDone, toolInstallCommand, WORK } from "./arms.mjs";
 import { unpricedProblems } from "./meter-price.mjs";
 import { BASE_ENV, judgeResult, scoreOf, sh, sha, tar, taskHashes } from "./judge.mjs";
 import { detectFlags } from "./safety.mjs";
@@ -50,7 +50,7 @@ for (const name of ["task", "tool", "model", "cap-usd"]) {
 	if (!args[name]) throw new Error(`--${name} is required`);
 }
 const resolved = armFor(args.tool);
-if (!resolved) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}, relay@<version>, relay@pkg`);
+if (!resolved) throw new Error(`unknown tool ${args.tool}; known: ${Object.keys(ARMS).join(", ")}, relay@<version>, relay@pkg, claude-code@<version>, codex@<version>`);
 const { arm } = resolved;
 if (resolved.relayPackage && !args["relay-package"]) throw new Error("relay@pkg needs --relay-package");
 if (args.fault && !["kill", "network", "errors"].includes(args.fault)) throw new Error(`unknown --fault ${args.fault}`);
@@ -217,6 +217,16 @@ try {
 			throw new Error(`installing Relay ${resolved.relayVersion} failed: ${(installed.stderr || printed).slice(-400)}`);
 		}
 		record.relayVersion = printed;
+	}
+	// A harness at a published version other than the image's pin (harness watch): installed over the image's own,
+	// where sandbox/template.mjs put it (npm's global folder, as root), and checked by what it prints.
+	if (resolved.toolVersion) {
+		const installed = await sh(work, toolInstallCommand(resolved.base, resolved.toolVersion), { user: "root" });
+		const printed = installed.stdout.trim().split("\n").pop() ?? "";
+		if (installed.exitCode !== 0 || !printed.includes(resolved.toolVersion)) {
+			throw new Error(`installing ${resolved.base} ${resolved.toolVersion} failed: ${(installed.stderr || printed).slice(-400)}`);
+		}
+		record.toolVersion = printed;
 	}
 
 	// The meter runs as root at api.anthropic.com and api.openai.com inside this sandbox, so no tool's endpoint setting

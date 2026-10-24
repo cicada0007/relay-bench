@@ -55,11 +55,21 @@ function world({ approved = 24, examTasks = 24, anchors } = {}) {
 	return { p, records, settingsPath, harness: fakeHarness(), out: join(p.root, "loop"), work: join(p.root, "work"), ledger: join(p.root, "ledger.json"), examP: sealedExam({ tasks: examTasks, approved, anchors }) };
 }
 
+/** The npm registry, made up: each watched package's latest version, published on 23 Oct 2026. */
+const fakeRegistry = (latest, { calls = [] } = {}) => async (url) => {
+	calls.push(url);
+	const pkg = decodeURIComponent(url.split("/").pop());
+	const version = latest[pkg];
+	if (!version) return { ok: false, status: 404, json: async () => ({}) };
+	return { ok: true, status: 200, json: async () => ({ name: pkg, "dist-tags": { latest: version }, time: { [version]: "2026-10-23T21:20:46.540Z" } }) };
+};
+
 /**
  * The fake outside world. `gh(args)` answers gh; `verdict` makes the gate's runs: "pass" (the build meets more
- * requirements) or "block" (it meets none). Every call is kept in `calls`.
+ * requirements) or "block" (it meets none); `registry` answers the harness watch's reads of npm. Every call is kept in
+ * `calls`.
  */
-function fakeOps(w, exam, { gh = () => ok(), verdict = "pass", npmFail = null, now = "2026-10-26T06:00:00Z" } = {}) {
+function fakeOps(w, exam, { gh = () => ok(), verdict = "pass", npmFail = null, now = "2026-10-26T06:00:00Z", registry = null } = {}) {
 	const calls = [];
 	const logs = [];
 	const stage = fakeExec({ calls: [], candidate: () => 1, champion: () => 0.5 });
@@ -123,13 +133,14 @@ function fakeOps(w, exam, { gh = () => ok(), verdict = "pass", npmFail = null, n
 		log: (line) => logs.push(line),
 		link: () => [],
 		env: { RELAY_BENCH_OPENAI_KEY: "made-up", E2B_API_KEY: "made-up" },
+		...(registry ? { fetch: registry } : {}),
 	};
 	return ops;
 }
 
 const options = (w, exam, over = {}) => ({
 	out: w.out, settingsPath: w.settingsPath, records: w.records, tasksDirs: [w.p.tasks], harness: w.harness.dir, exam: exam.root,
-	work: w.work, ledgerPath: w.ledger, model: "gpt-6-luna", spendCap: 30, signedBy: "arnav", ...over,
+	work: w.work, ledgerPath: w.ledger, model: "gpt-6-luna", spendCap: 30, signedBy: "arnav", scoreboard: join(w.p.root, "no-scoreboard.json"), ...over,
 });
 const statuses = (r) => r.steps.map((s) => `${s.step}:${s.status}`);
 const ghPass = (number = 301) => (args) => {
@@ -174,10 +185,21 @@ test("with fewer than 20 approved exam tasks the week runs the free steps and st
 test("a whole week, every outside step faked: cycle, builds, pre-screen, release, gate PASS, ledger, one pull request", async () => {
 	const w = world();
 	const exam = await w.examP;
-	const ops = fakeOps(w, exam, { gh: ghPass(301) });
+	const registryCalls = [];
+	const ops = fakeOps(w, exam, { gh: ghPass(301), registry: fakeRegistry({ "@anthropic-ai/claude-code": "2.1.310", "@openai/codex": "0.163.0" }, { calls: registryCalls }) });
 	const r = await runWeek(options(w, exam), ops);
 	assert.equal(r.exitCode, EXIT.DONE, JSON.stringify(r.steps, null, 1));
-	assert.deepEqual(statuses(r), ["pull request:ran", "harness:ran", "ready:ran", "cycle:ran", "build:ran", "prescreen:ran", "package:ran", "release:ran", "gate:ran", "ledger:ran", "pull request:ran"]);
+	assert.deepEqual(statuses(r), ["harnesses:ran", "pull request:ran", "harness:ran", "ready:ran", "cycle:ran", "build:ran", "prescreen:ran", "package:ran", "release:ran", "gate:ran", "ledger:ran", "pull request:ran"]);
+
+	// The harness watch: one read of npm per harness, a new Claude Code queued as an exam stage for a person, and its
+	// line in the cycle's notes; nothing of it ran.
+	assert.deepEqual(registryCalls, ["https://registry.npmjs.org/@anthropic-ai%2fclaude-code", "https://registry.npmjs.org/@openai%2fcodex"]);
+	const queued = readFileSync(join(exam.root, "queue", "harness-watch.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+	assert.deepEqual(queued.map((q) => [q.id, q.test, q.week, q.status]), [["claude-code@2.1.310", "bar-1-haiku-claude-code-2.1.310", "2026-W44", "waiting for a person"]]);
+	assert.ok(!ops.calls.some((c) => c.includes("bar-1-haiku-claude-code-2.1.310")), "no step started the queued stage");
+	const cycleState = JSON.parse(readFileSync(join(w.out, "2026-W44", "cycle.json"), "utf8"));
+	assert.ok(cycleState.notes.some((n) => /^Claude Code 2\.1\.310 came out on 23 Oct 2026 \(the benchmark pins 2\.1\.300\): its exam stage bar-1-haiku-claude-code-2\.1\.310 is queued for a person/.test(n)), cycleState.notes.join("\n"));
+	assert.ok(cycleState.notes.some((n) => /^Codex: 0\.163\.0 is the latest published version and the one the benchmark pins; nothing new$/.test(n)));
 	const st = r.state;
 	assert.equal(st.build, "0.6.122-loop.2026w44");
 	assert.equal(st.champion, "0.6.121");
@@ -241,7 +263,9 @@ test("a whole week, every outside step faked: cycle, builds, pre-screen, release
 	assert.deepEqual(g.prs.map((p) => [p.number, p.status, p.build]), [[301, "open", "0.6.122-loop.2026w44"]]);
 	const report = readFileSync(join(w.out, "2026-W44", "autopilot", "report.md"), "utf8");
 	assert.match(report, /\*\*A pull request waits for you:\*\* https:\/\/github\.com\/cicada0007\/relay-harness\/pull\/301/);
-	for (const part of ["## What Relay learned about itself", "## What it proposed", "## What it tested", "## What it cost"]) assert.ok(report.includes(part), part);
+	for (const part of ["## What Relay learned about itself", "## What it proposed", "## New harness versions", "## What it tested", "## What it cost"]) assert.ok(report.includes(part), part);
+	assert.match(report, /- Claude Code 2\.1\.310 came out on 23 Oct 2026 .*queued for a person/);
+	assert.match(readFileSync(join(w.out, "2026-W44", "report.md"), "utf8"), /Notes: .*Claude Code 2\.1\.310 came out on 23 Oct 2026/, "a line in the week's notes");
 	assert.doesNotMatch(report, /\b(better|worse)\b/i);
 
 	// Money: within the cap.

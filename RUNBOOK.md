@@ -216,7 +216,29 @@ Then it writes the result as a small hashed file, `../relay-exam/runs/model-watc
 `~/.relay/agent/model-watch/exams/` (`--relay-dir` for another machine's folder, `none` to skip), where Relay reads it:
 a PASS lets routing use the model, anything else keeps it out. A model's exam never goes in the ledger.
 
-## Growing the exam
+### A new harness: harness watch
+
+A new Claude Code or Codex is tried on the exam the week it comes out, the way model watch tries a new model. Free:
+it reads each package's latest version from the npm registry (`@anthropic-ai/claude-code` and `@openai/codex`, one
+read-only request each) and compares it with the version the benchmark pins (`harbor-agents/relay_bench_agents.py`,
+the same as `sandbox/template.mjs`) and the versions the scoreboard shows:
+
+```
+node scripts/harness-watch.mjs --dry-run      # what is new, and the plan for each new version; queues nothing
+node scripts/harness-watch.mjs                # the same, and each new version's plan queued for a person
+```
+
+For a version newer than the pin that the scoreboard does not show and no earlier week queued, it plans one exam
+stage: the bar's stage that harness runs in ("The bar", below: Claude Code in `bar-1-haiku`, Codex in
+`bar-1-openai`), with that stage's model, tasks, repetitions, caps and Relay, and the new version as
+`claude-code@<version>` or `codex@<version>` (each run installs that version over the image's own, so the image is not
+built again). The stage has its own name, such as `bar-1-haiku-claude-code-2.1.310`, so it has its own stage cap, and
+its records go in `../relay-exam/runs/bar` beside the bar's, where the scoreboard shows it as its own run. The plan is
+one line of `../relay-exam/queue/harness-watch.jsonl`: the smoke run (about $0.20), the stage's command and the most
+it could cost. Nothing paid starts here: a person runs the smoke, then the stage (every exam run counts against the
+leak budget, as in the bar). The weekly autopilot runs the same check once a week and puts its lines in the week's
+notes (`runs/loop/<week>/report.md`) and report.
+
 
 **Not yet run.** Every command below is built and tested on recorded and made-up data only. TIERS.md says how a task is
 made and why. Run from this folder, with the private exam repository checked out beside it at `../relay-exam`. The

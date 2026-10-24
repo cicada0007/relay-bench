@@ -11,6 +11,9 @@
 //
 // One week, in order; each step says ran, skipped, stopped or failed, and why:
 //   money         without --spend-cap nothing runs: it prints the most the week could cost and exits 3
+//   harnesses     free, once a week: the npm registry's latest Claude Code and Codex against the benchmark's pins and
+//                 the scoreboard; a new version gets an exam stage queued for a person, never run here
+//                 (scripts/harness-watch.mjs). Its lines go in the cycle's notes and this report
 //   pull request  last week's pull request: while it waits for a person, or is merged but in no release yet, the week
 //                 stops before anything paid (one pull request at a time; each cycle is measured against the release
 //                 that holds the one before)
@@ -45,6 +48,7 @@ import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
 import { isLocalBuild, providerOf, RELAY_VERSION_PATTERN } from "../runner/arms.mjs";
 import { readTasks } from "../runner/stage-tasks.mjs";
 import { approvalProblems } from "../scripts/approve-task.mjs";
+import { watchHarnesses } from "../scripts/harness-watch.mjs";
 import { readLedger } from "../scripts/ledger.mjs";
 import { lockDifferences } from "../scripts/lock-tasks.mjs";
 import { addWorktree, applyPatch, BuildError, buildEnv, buildRelay, buildVersion, commitTree, freeGb, keepPackage, linkNodeModules, sh, sha256File } from "./build.mjs";
@@ -80,6 +84,7 @@ export const DEFAULTS = Object.freeze({
 	settingsPath: SETTINGS_PATH,
 	harness: resolve(ROOT, "..", "prime-agent-main"),
 	exam: resolve(ROOT, "..", "relay-exam"),
+	scoreboard: join(ROOT, "results", "scoreboard.json"),
 	repo: HARNESS_REPO,
 	model: "gpt-6-luna",
 	label: "no-linear",
@@ -374,6 +379,9 @@ export function weeklyReport({ cycle, steps, cs, st, g, o, exitCode }) {
 	if (cs?.refused?.length) L.push("", `${plural(cs.refused.length, "proposal")} broke a rule of its lane and ${cs.refused.length === 1 ? "was" : "were"} refused.`);
 	const early = steps.some((s) => s.step === "ready" && s.status === "stopped");
 	if (cs?.waitingWrites?.length) L.push("", `${plural(cs.waitingWrites.length, "written change")} waited${early ? " for the paid steps" : `: ${cs.waitingWrites[0].why}`}.`);
+	L.push("", "## New harness versions", "");
+	if (!st.harnesses) L.push("Not checked this week.");
+	else for (const line of st.harnesses.lines) L.push(`- ${line}.`);
 	L.push("", "## What it tested", "");
 	const builds = Object.entries(st.builds ?? {});
 	if (builds.length) L.push(`Builds: ${builds.filter(([, b]) => b.status === "built").length} of ${builds.length} built${builds.some(([, b]) => b.status === "failed") ? `; failed: ${builds.filter(([, b]) => b.status === "failed").map(([id, b]) => `${id} (${b.why.split("\n")[0]})`).join("; ")}` : ""}.`);
@@ -450,6 +458,17 @@ export async function runWeek(options, ops) {
 	}
 	if (!(o.spendCap > 0)) throw new Error("--spend-cap is a number of dollars above 0");
 
+	// harnesses: free, once a week. A new Claude Code or Codex gets an exam stage queued for a person; nothing runs.
+	if (!st.harnesses && ops.fetch) {
+		try {
+			st.harnesses = await watchHarnesses({ fetch: ops.fetch, examDir: o.exam, scoreboardPath: o.scoreboard, week: cycle, now });
+		} catch (error) {
+			done("harnesses", "failed", `the harness watch stopped (${error.message}); the week goes on without it`);
+		}
+	}
+	if (st.harnesses) done("harnesses", "ran", st.harnesses.lines.join("; "));
+	else if (!ops.fetch) done("harnesses", "skipped", "no way to read the npm registry was given, so no harness version was checked");
+
 	// last week's pull request
 	try {
 		for (const rec of g.prs) checkPullRequest(rec, g, o, ops);
@@ -508,6 +527,7 @@ export async function runWeek(options, ops) {
 			exam: o.exam,
 			teaching: o.teaching ?? null,
 			armOutcomes: o.armOutcomes ?? null,
+			notes: st.harnesses?.lines ?? [],
 			packages: join(dir, "packages"),
 			ledgerPath: o.ledgerPath,
 			spendCap,
@@ -778,6 +798,8 @@ export function realOps({ log = (line) => console.log(line) } = {}) {
 		log,
 		link: linkNodeModules,
 		env: process.env,
+		// The harness watch's one network read: the npm registry, free and read-only.
+		fetch: globalThis.fetch,
 	};
 }
 
@@ -807,6 +829,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			"tasks-dir": { type: "string", multiple: true },
 			teaching: { type: "string" },
 			"arm-outcomes": { type: "string" },
+			scoreboard: { type: "string" },
 			champion: { type: "string" },
 			cycle: { type: "string" },
 			out: { type: "string" },
@@ -831,6 +854,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		...(values.out ? { out: resolve(values.out) } : {}),
 		...(values.work ? { work: resolve(values.work) } : {}),
 		...(values.settings ? { settingsPath: resolve(values.settings) } : {}),
+		...(values.scoreboard ? { scoreboard: resolve(values.scoreboard) } : {}),
 		records: (values.records ?? inputs.records).map((p) => resolve(p)),
 		tasksDirs: (values["tasks-dir"] ?? inputs.tasksDirs).map((p) => resolve(p)),
 		teaching: values.teaching ? resolve(values.teaching) : null,

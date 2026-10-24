@@ -50,6 +50,7 @@ tested, what it cost, and whether a pull request is waiting.
 | Step | What it does | Paid | Stops when |
 | --- | --- | --- | --- |
 | money | checks for `--spend-cap` | no | no cap was given: prints the most the week could cost (exit 3) |
+| harnesses | `scripts/harness-watch.mjs`, once a week: the npm registry's latest Claude Code and Codex against the benchmark's pins and the scoreboard; a new version gets an exam stage queued for a person, and one line per harness goes in the week's notes and the report | no | (never: a registry it cannot read is said so, and the week goes on) |
 | pull request | reads its earlier pull requests with `gh`, and records the release that holds a merged one | no | one is open, or merged but in no release yet (exit 4) |
 | harness | fixes origin/main for the week, names the champion and this week's build version | no | origin/main cannot be read |
 | ready | checks the exam (20 approved, locked tasks, an anchor set), the loop's approved settings, `--signed-by`, the keys and the disk (3 GB free) | no | anything missing: runs the free cycle steps, then prints one sentence (exit 4) |
@@ -168,4 +169,7 @@ package installs and prints `0.6.122-loop.2026w43`. What has not run yet:
   "ready";
 - the per-run cost and time on the exam's tasks and on GPT-6 Luna, which the estimates above take from round 1;
 - `gh pr create` and `git push` against cicada0007/relay-harness, and the after-merge reading of a real release;
-- the launchd job itself, including the first Keychain prompt under launchd.
+- the launchd job itself, including the first Keychain prompt under launchd;
+- a queued harness stage. The harness watch's real read of npm was run once by hand as a dry run (24 Oct 2026: Claude
+  Code 2.1.310 and Codex 0.164.0, both out on 23 Oct, against pins 2.1.300 and 0.163.0); installing a new harness
+  version in a run's sandbox has not run, and the first one is the smoke a person starts.
