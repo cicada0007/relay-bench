@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { gzipSync } from "node:zlib";
 import { openLedger } from "../scripts/draft-spend.mjs";
-import { parsePick, patchEvidence, pick, showOrder, stepsFromRelaySession, stepsFromTrajectory, workLog } from "./pick.mjs";
+import { parsePick, patchEvidence, pick, showOrder, stepsFromClaudeStream, stepsFromRelaySession, stepsFromTrajectory, workLog } from "./pick.mjs";
 import { runExam } from "./pick-exam.mjs";
 
 test("a work log over budget keeps the first actions and the last, and says how many it left out", () => {
@@ -50,6 +50,24 @@ test("from a Relay session the picker gets tool calls and their results, never t
 	];
 	const steps = stepsFromRelaySession(`${lines.map((l) => JSON.stringify(l)).join("\n")}\nnot json\n`);
 	assert.deepEqual(steps, [{ call: "ipython: print(1)", output: "1" }]);
+});
+
+test("Relay's event stream and Claude Code's stream give the same kind of actions", () => {
+	const events = [
+		{ type: "message_update", message: { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "ipython", arguments: { code: "partial" } }] } },
+		{ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Done." }, { type: "toolCall", id: "c1", name: "ipython", arguments: { code: "ls" } }] } },
+		{ type: "message_end", message: { role: "toolResult", toolCallId: "c1", content: [{ type: "text", text: "a.txt" }] } },
+	];
+	assert.deepEqual(stepsFromRelaySession(events.map((e) => JSON.stringify(e)).join("\n")), [{ call: "ipython: ls", output: "a.txt" }]);
+	const stream = [
+		{ type: "system", subtype: "init" },
+		{ type: "assistant", message: { content: [{ type: "text", text: "All good." }, { type: "tool_use", id: "t1", name: "Write", input: { file_path: "/app/x.py", content: "print(1)" } }] } },
+		{ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "File created" }] } },
+		{ type: "result", subtype: "success", result: "Finished, all tests pass." },
+	];
+	const steps = stepsFromClaudeStream(stream.map((e) => JSON.stringify(e)).join("\n"));
+	assert.deepEqual(steps, [{ call: "Write /app/x.py (8 characters):\nprint(1)", output: "File created" }]);
+	assert.doesNotMatch(JSON.stringify(steps), /All good|Finished/);
 });
 
 test("a patch loses lockfiles and a harness's own notes, and keeps the code", () => {
@@ -162,6 +180,23 @@ test("the exam asks only about pairs the grader split, scores the picks, and reu
 	const second = await runExam(args);
 	assert.equal(asked.length, 3, "a second run reuses every answer");
 	assert.deepEqual(second.summary, first.summary);
+});
+
+test("a split pair whose attempt kept no actions is left out, and an answer naming nothing is asked once more", async () => {
+	const { root, round, tasks } = fakeRound();
+	const records = readFileSync(join(round, "F", "records.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+	const lost = records.find((r) => r.task === "terminal-bench/split" && r.tool === "relay" && r.rep === 2);
+	const { rmSync } = await import("node:fs");
+	rmSync(join(round, "F", "jobs", lost.jobName), { recursive: true });
+	let calls = 0;
+	const model = { complete: async () => (calls++, { text: calls === 1 ? "I cannot decide." : '{"pick":"A","confidence":0.6,"reason":"r"}', usage: { input_tokens: 10, output_tokens: 10 }, model: "gpt-6-luna" }) };
+	const ledger = openLedger(join(root, "spend.json"), { caps: { openai: 1 } });
+	const result = await runExam({ round, tasksDirs: [tasks], families: ["tb-relay-cc", "tb-cc-cc"], dropped: [], model, modelId: "gpt-6-luna", effort: "low", ledger, out: join(root, "out.jsonl"), concurrency: 1, log: () => {} });
+	assert.deepEqual(result.left.map((l) => l.key), ["terminal-bench/split|r2"]);
+	assert.equal(result.summary["tb-relay-cc"].pairs, 3, "the left-out pair counts in no score");
+	assert.equal(calls, 2, "the cc-cc pair is asked twice: once with no answer, once more");
+	assert.equal(result.summary["tb-cc-cc"].unanswered, 0);
+	assert.equal(result.complete, true);
 });
 
 test("with no spending cap the exam calls nothing", async () => {

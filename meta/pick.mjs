@@ -85,7 +85,10 @@ export function stepsFromTrajectory(trajectory) {
 	return steps;
 }
 
-/** Actions from a Relay session file (one JSON entry per line). Assistant text and thinking are dropped. */
+/**
+ * Actions from a Relay session file or its event stream (`relay --mode json`: the same messages, as message_end
+ * events), one JSON entry per line. Assistant text and thinking are dropped.
+ */
 export function stepsFromRelaySession(jsonl) {
 	const steps = [];
 	const byId = new Map();
@@ -97,7 +100,7 @@ export function stepsFromRelaySession(jsonl) {
 		} catch {
 			continue;
 		}
-		const m = entry.type === "message" ? entry.message : null;
+		const m = entry.type === "message" || entry.type === "message_end" ? entry.message : null;
 		if (!m) continue;
 		if (m.role === "assistant") {
 			for (const c of m.content ?? []) {
@@ -109,6 +112,34 @@ export function stepsFromRelaySession(jsonl) {
 		} else if (m.role === "toolResult") {
 			const step = byId.get(m.toolCallId);
 			if (step) step.output = textOf(m.content);
+		}
+	}
+	return steps;
+}
+
+/** Actions from Claude Code's stream-json output (`claude -p --output-format stream-json`). Prose is dropped. */
+export function stepsFromClaudeStream(text) {
+	const steps = [];
+	const byId = new Map();
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		let entry;
+		try {
+			entry = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		const content = entry.message?.content;
+		if (!Array.isArray(content)) continue;
+		for (const c of content) {
+			if (entry.type === "assistant" && c.type === "tool_use") {
+				const step = { call: describeCall(c.name, c.input), output: undefined };
+				byId.set(c.id, step);
+				steps.push(step);
+			} else if (entry.type === "user" && c.type === "tool_result") {
+				const step = byId.get(c.tool_use_id);
+				if (step) step.output = textOf(c.content);
+			}
 		}
 	}
 	return steps;
