@@ -31,7 +31,8 @@
 //   gate          runner/gate.mjs on the exam (PAID): the local build against the champion, look by look within the cap,
 //                 --combined when the release holds two lanes or more
 //   ledger        on PASS only: scripts/ledger.mjs write, which reads the gate again from its records
-//   pull request  on PASS only: the branch pushed and a pull request opened in the harness, label no-linear
+//   pull request  on PASS only: the branch pushed and a pull request opened in the harness, label no-linear; its
+//                 body opens with what Relay learned this week (loop/learned.mjs), with the gate's numbers
 // On BLOCK or UNRESOLVED it writes the report and opens nothing. It never merges, releases or publishes.
 //
 // Output: <out>/<cycle>/autopilot/report.md (plain words, numbers only for results), state.json, PR_BODY.md; and
@@ -48,12 +49,13 @@ import { anchorProblems, loadAnchors } from "../runner/anchors.mjs";
 import { isLocalBuild, providerOf, RELAY_VERSION_PATTERN } from "../runner/arms.mjs";
 import { readTasks } from "../runner/stage-tasks.mjs";
 import { approvalProblems } from "../scripts/approve-task.mjs";
-import { watchHarnesses } from "../scripts/harness-watch.mjs";
+import { triedThisWeek, watchHarnesses } from "../scripts/harness-watch.mjs";
 import { readLedger } from "../scripts/ledger.mjs";
 import { lockDifferences } from "../scripts/lock-tasks.mjs";
 import { addWorktree, applyPatch, BuildError, buildEnv, buildRelay, buildVersion, commitTree, freeGb, keepPackage, linkNodeModules, sh, sha256File } from "./build.mjs";
 import { isoWeek, runCycle } from "./cycle.mjs";
 import { LANES } from "./lanes.mjs";
+import { learnedLines, learnedSection } from "./learned.mjs";
 import { loadSettings, PAID_LANES, SETTINGS_PATH } from "./meta.mjs";
 import { describeChange } from "./package.mjs";
 import { crontabLine, LABEL, plist, plistPath, scheduleArgs } from "./schedule.mjs";
@@ -302,9 +304,9 @@ export function gateLines(r) {
 }
 
 /** The pull request's body: the package's PR_BODY.md, then what the autopilot measured and wrote. Numbers only. */
-export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir, spend }) {
+export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir, spend, learned = [] }) {
 	const cut = prBody.indexOf("\n## How it is judged");
-	const head = (cut === -1 ? prBody : prBody.slice(0, cut)).trimEnd();
+	const head = withLearned((cut === -1 ? prBody : prBody.slice(0, cut)).trimEnd(), learned);
 	const gateCmd = [
 		`node runner/gate.mjs --test gate-${st.build} --champion ${st.champion} --candidate ${st.build} \\`,
 		`  --candidate-package runs/loop/${cycle}/release/relay-${st.build}.tgz --tier exam \\`,
@@ -356,11 +358,31 @@ export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir,
 	return L.join("\n");
 }
 
+/**
+ * The package's body with its "What Relay learned this week" section said again with the gate's numbers (loop/learned.mjs),
+ * or added before the changes when the package has none.
+ */
+export function withLearned(body, learned) {
+	if (!learned?.length) return body;
+	const section = learnedSection(learned).join("\n");
+	const at = body.indexOf("## What Relay learned this week");
+	if (at !== -1) {
+		const next = body.indexOf("\n## ", at + 1);
+		return `${body.slice(0, at)}${section}${next === -1 ? "" : body.slice(next)}`;
+	}
+	const changes = body.indexOf("## The changes");
+	return changes === -1 ? `${body}\n\n${section}` : `${body.slice(0, changes)}${section}\n${body.slice(changes)}`;
+}
+
+/** The harness versions this week tried for the first time, in words, for the release's lines; null when none was checked. */
+const harnessWords = (st, o) => (st.harnesses ? triedThisWeek(st.harnesses, { examDir: o.exam }).map((t) => t.words) : null);
+
 /** The week in plain words: what Relay learned about itself, what it proposed, tested and spent, and whether a pull request waits. */
 export function weeklyReport({ cycle, steps, cs, st, g, o, exitCode }) {
 	const L = [`# Relay autopilot, week ${cycle}`, ""];
 	const pr = g.prs.find((p) => p.cycle === cycle && p.url);
 	L.push(pr ? `**A pull request waits for you:** ${pr.url}. Merging it is the one step; the autopilot never merges or releases.` : `**No pull request this week.** ${steps.at(-1)?.why ?? ""}`, "");
+	if (pr && st.learned?.length) L.push(`It says: ${st.learned.join(" ")}`, "");
 	const a = cs?.analysis;
 	L.push("## What Relay learned about itself", "");
 	if (!a) L.push("Nothing was studied this week.");
@@ -528,6 +550,7 @@ export async function runWeek(options, ops) {
 			teaching: o.teaching ?? null,
 			armOutcomes: o.armOutcomes ?? null,
 			notes: st.harnesses?.lines ?? [],
+			harnesses: harnessWords(st, o),
 			packages: join(dir, "packages"),
 			ledgerPath: o.ledgerPath,
 			spendCap,
@@ -739,7 +762,11 @@ export async function runWeek(options, ops) {
 		const cycleSpent = st.spend.filter((e) => e.step === "cycle").reduce((s, e) => s + e.usd, 0);
 		const gateSpent = st.spend.filter((e) => e.step === "gate").reduce((s, e) => s + e.usd, 0);
 		const sandbox = st.spend.reduce((s, e) => s + (e.sandboxUsd ?? 0), 0);
-		const body = pullRequestBody({ prBody, st, result, ledgerLine: st.ledger.line, o, cycle, dir, spend: { total: cycleSpent + gateSpent, cycle: cycleSpent, gate: gateSpent, sandbox } });
+		// What Relay learned this week, said again with the gate's numbers.
+		const cs = readJson(join(dir, "cycle.json"));
+		const chosen = (cs?.package?.lanes ?? []).map((l) => (cs.proposals ?? []).find((p) => p.id === l.change.replace(/^loop:[^:]+:/, ""))).filter(Boolean);
+		st.learned = learnedLines({ cycle, chosen, results: Object.values(cs?.prescreen?.results ?? {}), gate: result, champion: st.champion, harnesses: harnessWords(st, o) });
+		const body = pullRequestBody({ prBody, st, result, ledgerLine: st.ledger.line, o, cycle, dir, spend: { total: cycleSpent + gateSpent, cycle: cycleSpent, gate: gateSpent, sandbox }, learned: st.learned });
 		const bodyPath = join(apDir, "PR_BODY.md");
 		writeFileSync(bodyPath, body);
 		const title = (prBody.split("\n")[0] ?? `Relay loop, cycle ${cycle}`).replace(/^#\s*/, "");

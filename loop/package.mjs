@@ -2,10 +2,11 @@
 //
 // One change per lane (GATE.md amendment 1, "Combined candidates": several lane changes are judged as one candidate,
 // once, at the full 2.5%): the best pre-screened proposal of each lane. The package is files in the cycle's folder:
-// - PR_BODY.md: the body of the pull request a person would open in the harness, with each lane's change, the gain and
-//   interval it showed on the dev set, the check tier's answer, the risk tier, how to roll it back, and the ledger
-//   entry the release would make;
-// - release.patch: every change, composed, for `git apply` at the champion;
+// - PR_BODY.md: the body of the pull request a person would open in the harness, with what Relay learned this week in
+//   one or two plain sentences (loop/learned.mjs), each lane's change, the gain and interval it showed on the dev set,
+//   the check tier's answer, the risk tier, how to roll it back, and the ledger entry the release would make;
+// - release.patch: every change, composed, for `git apply` at the champion, plus the release's changelog fragment
+//   (`packages/coding-agent/.changes/loop-<week>.md`, the same sentences), which Releases shows once it ships;
 // - lanes.json: the combined candidate's manifest for the gate (runner/gate.mjs --combined), with two lanes or more;
 // - ledger-preview.json: the entry scripts/ledger.mjs would add, which it writes only after the gate on the exam stops
 //   with PASS and a person signs it.
@@ -15,6 +16,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addsNewFile, newFileDiff, newFileText, serializeLike, setPath, unifiedDiff } from "./diff.mjs";
 import { LANE_ORDER, LANES, needsMetaHarness } from "./lanes.mjs";
+import { fragmentDiffs, learnedLines, learnedSection } from "./learned.mjs";
 import { applyToText, maxRisk } from "./propose.mjs";
 
 const f = (x, d = 1) => (x === null || x === undefined || !Number.isFinite(x) ? "–" : x.toFixed(d));
@@ -123,13 +125,14 @@ export function ledgerPreview({ ledger, release, champion, lanes }) {
 }
 
 /** The pull request's body, in plain words and numbers only. */
-export function prBody({ cycle, release, champion, chosen, results, arch, held, preview, model }) {
+export function prBody({ cycle, release, champion, chosen, results, arch, held, preview, model, learned = [] }) {
 	const byId = new Map(results.map((r) => [r.id, r]));
 	const lines = [];
 	const lanes = chosen.map((p) => LANES[p.lane].label);
 	lines.push(`# Relay loop, cycle ${cycle}: ${lanes.join(", ")}`, "");
 	lines.push(`One release candidate from the improvement loop's cycle ${cycle}, against the champion relay@${champion}. It holds one change in each of ${chosen.length} lane${chosen.length === 1 ? "" : "s"}, judged as one candidate by the gate on the exam${chosen.length >= 2 ? " (`--combined lanes.json`)" : ""}. Nothing here is released; a person opens this pull request, the gate judges the release, and a founder signs it.`, "");
 	lines.push(`**Risk tier:** ${maxRisk(chosen.map((p) => p.risk))} (the highest of the lanes below: low, a limit moved one step in relay.arch; medium, what a model is told, which model works, or a value held in code; high, how Relay is put together).`, "");
+	if (learned.length) lines.push(...learnedSection(learned));
 	lines.push("## The changes", "");
 	for (const p of chosen) {
 		const r = byId.get(p.id);
@@ -178,7 +181,7 @@ export function prBody({ cycle, release, champion, chosen, results, arch, held, 
  * The package for one cycle. `results` are the pre-screen results; `proposals` the cycle's proposals by id. Writes the
  * files under <cycleDir>/release unless `write` is false. Returns what it wrote, or { empty: why } when nothing passed.
  */
-export function packageRelease({ cycle, cycleDir, results, proposals, arch, archText, sources = () => null, ledger, champion, release, model, write = true }) {
+export function packageRelease({ cycle, cycleDir, results, proposals, arch, archText, sources = () => null, ledger, champion, release, model, harnesses = null, write = true }) {
 	const passed = results.filter((r) => r.status === "passed");
 	if (!passed.length) return { empty: "no proposal passed its pre-screen this cycle" };
 	const byId = new Map(proposals.map((p) => [p.id, p]));
@@ -190,9 +193,12 @@ export function packageRelease({ cycle, cycleDir, results, proposals, arch, arch
 	const lanes = chosen.map((p) => ({ lane: p.lane, change: changeId(cycle, p.id) }));
 	const preview = ledgerPreview({ ledger, release, champion, lanes });
 	const held = [...notChosen, ...composed.held];
-	const body = prBody({ cycle, release, champion, chosen, results, arch, held, preview, model });
+	// What Relay learned this week, in the body and in the release's changelog fragment, with the pre-screen's numbers.
+	const learned = learnedLines({ cycle, chosen, results, champion, harnesses });
+	const fragments = fragmentDiffs({ cycle, lines: learned, patch: composed.patch, sources });
+	const body = prBody({ cycle, release, champion, chosen, results, arch, held, preview, model, learned });
 	const manifest = chosen.length >= 2 ? { release, lanes } : null;
-	const out = { dir: join(cycleDir, "release"), lanes, risk: maxRisk(chosen.map((p) => p.risk)), held, body, patch: composed.patch, manifest, preview, relayMeta: chosen.some(needsMetaHarness), files: [] };
+	const out = { dir: join(cycleDir, "release"), lanes, risk: maxRisk(chosen.map((p) => p.risk)), held, body, patch: composed.patch + fragments.patch, learned, fragments: fragments.files, manifest, preview, relayMeta: chosen.some(needsMetaHarness), files: [] };
 	if (write) {
 		mkdirSync(out.dir, { recursive: true });
 		const put = (name, text) => {
@@ -200,7 +206,7 @@ export function packageRelease({ cycle, cycleDir, results, proposals, arch, arch
 			out.files.push(join(out.dir, name));
 		};
 		put("PR_BODY.md", body);
-		put("release.patch", composed.patch);
+		put("release.patch", out.patch);
 		if (manifest) put("lanes.json", `${JSON.stringify(manifest, null, 2)}\n`);
 		put("ledger-preview.json", `${JSON.stringify(preview, null, 2)}\n`);
 	}

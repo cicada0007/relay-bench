@@ -66,6 +66,18 @@ The pull request's body is the package's `PR_BODY.md`, then the gate's verdict a
 and SHA-256, the week's spend, the ledger entry, how to roll back, and the exact commands to reproduce. It holds
 numbers only.
 
+It opens with **what Relay learned this week**, in one or two plain sentences (`loop/learned.mjs`): the change the
+release ships and the gate's measured result on the exam (points of requirements met against the champion, with the
+interval), the rows of the router's starting table it changes, and the harness versions tried for the first time that
+week. For example: "In week 2026-W44 Relay learned to set queue.requestCheck.maxChecks from 2 to 3; the gate on the
+exam measured +1.2 points of requirements met against relay@0.6.121 (interval -0.8 to 3.1, 120 tasks, PASS). It
+changes no row of the router's starting table, and this week's new harness version is Claude Code 2.1.310 (its exam
+stage is queued for a person)." The release's commit carries the same sentences as its changelog fragment,
+`packages/coding-agent/.changes/loop-<week>.md` (and one in each other package whose `src/` it changes), which the
+harness folds into CHANGELOG.md when a release is cut, so Releases shows it. That commit is fixed before the gate runs
+and is what the gate judges, so the fragment has the pre-screen's numbers on the dev set; the gate's are in the pull
+request and the ledger.
+
 Run the same command again to resume. The week's analysis and proposals are fixed at its first run. Builds, finished
 pre-screens, the release build, the gate's looks, the ledger entry and the pull request are each done once.
 

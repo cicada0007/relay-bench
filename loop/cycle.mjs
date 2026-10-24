@@ -12,11 +12,12 @@
 //   prescreen   PAID: each proposal's build against the champion on the dev set (practice), then the selection set
 //               (the check tier's one word), within each lane's fixed budget and the command's --spend-cap
 //   package     one combined release: the PR body, the patch, the gate's manifest and the ledger entry it would make,
-//               written to files; the cycle never opens a pull request in relay-harness (the autopilot,
-//               loop/autopilot.mjs, opens one only after the gate on the exam passes)
+//               written to files, with what Relay learned this week in one or two plain sentences (loop/learned.mjs);
+//               the cycle never opens a pull request in relay-harness (the autopilot, loop/autopilot.mjs, opens one
+//               only after the gate on the exam passes)
 //
 // The autopilot also hands the cycle the week's harness watch (scripts/harness-watch.mjs): its lines join the cycle's
-// notes.
+// notes, and the harness versions it tried for the first time join the release's lines.
 //
 //   node loop/cycle.mjs --records runs/round-1/records.jsonl [--records runs/round-1/F/records.jsonl] \
 //     --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 \
@@ -101,6 +102,7 @@ export async function runCycle({
 	teaching = null,
 	armOutcomes = null,
 	notes: extraNotes = [],
+	harnesses = null,
 	packages = null,
 	ledgerPath = undefined,
 	spendCap = null,
@@ -325,10 +327,10 @@ export async function runCycle({
 		if (!results.some((r) => r.status === "passed")) done("package", "skipped", "no proposal passed its pre-screen");
 		else {
 			const rel = release ?? "<the beta version>";
-			const pkg = packageRelease({ cycle, cycleDir: dir, results, proposals: toScreen, arch, archText, sources, ledger, champion, release: rel, model, write: !dryRun });
+			const pkg = packageRelease({ cycle, cycleDir: dir, results, proposals: toScreen, arch, archText, sources, ledger, champion, release: rel, model, harnesses, write: !dryRun });
 			if (pkg.empty) done("package", "skipped", pkg.empty);
 			else {
-				state.package = { lanes: pkg.lanes, risk: pkg.risk, held: pkg.held, files: pkg.files, ...(pkg.relayMeta ? { relayMeta: true } : {}) };
+				state.package = { lanes: pkg.lanes, risk: pkg.risk, held: pkg.held, files: pkg.files, learned: pkg.learned, fragments: pkg.fragments, ...(pkg.relayMeta ? { relayMeta: true } : {}) };
 				save();
 				done("package", "ran", `one release of ${pkg.lanes.length} lane${pkg.lanes.length === 1 ? "" : "s"} (${pkg.lanes.map((l) => l.lane).join(", ")}), risk ${pkg.risk}; ${dryRun ? "dry run, nothing written" : `written to ${pkg.dir}`}; not opened anywhere`);
 			}
@@ -429,7 +431,10 @@ export function cycleReport({ cycle, steps, state, settings, approval, money, sp
 		L.push(`- ${lane}: ${money2(money.laneSpent(lane))} of ${money2(b.budgetUsd)}${b.enabled ? "" : " (lane off)"}`);
 	}
 	L.push("");
-	if (state.package) L.push("## Release", "", `Lanes ${state.package.lanes.map((l) => l.lane).join(", ")}, risk ${state.package.risk}. Files: ${state.package.files.join(", ") || "none written"}.`, "");
+	if (state.package) {
+		L.push("## Release", "", `Lanes ${state.package.lanes.map((l) => l.lane).join(", ")}, risk ${state.package.risk}. Files: ${state.package.files.join(", ") || "none written"}.`, "");
+		if (state.package.learned?.length) L.push(`What it learned: ${state.package.learned.join(" ")}`, "");
+	}
 	return L.join("\n");
 }
 

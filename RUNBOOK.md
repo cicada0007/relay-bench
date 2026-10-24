@@ -367,7 +367,7 @@ the same command again to resume: the week's analysis and proposals are fixed at
 | propose | one change per lane, checked against its lane and the invariants | the writer lanes only |
 | exam | kinds of task the exam should mine more of, into `../relay-exam/queue/loop-proposals.jsonl` for a person | no |
 | prescreen | each proposal's build against the champion: the dev set (practice), then the check tier's one word | yes |
-| package | one combined release: `PR_BODY.md`, `release.patch`, `lanes.json`, `ledger-preview.json` | no |
+| package | one combined release: `PR_BODY.md` (opening with what Relay learned this week, in one or two plain sentences), `release.patch` (with the release's changelog fragment), `lanes.json`, `ledger-preview.json` | no |
 
 The lanes, each with a fixed budget per cycle in `loop/settings.json` (estimates for the founders to confirm):
 

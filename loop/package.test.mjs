@@ -103,3 +103,32 @@ test("one lane is a release without a combined manifest; no pass is no package",
 	assert.equal(pkg.preview.wouldBe.seq, 1);
 	assert.match(packageRelease({ cycle: "2026-W43", cycleDir, results: [result(one, { status: "dropped" })], proposals, arch, archText, sources, ledger: emptyLedger(), champion: "0.6.121", release: "x", model: "m" }).empty, /no proposal passed/);
 });
+
+test("the release says what Relay learned this week, in its body and in a changelog fragment the patch adds", async () => {
+	const { arch, archText, proposals } = await cycleProposals();
+	const config = proposals.filter((p) => p.lane === "config")[1];
+	const prompts = proposals.find((p) => p.lane === "prompts");
+	const results = [result(config, { dev: { ...result(config).dev, difference: 4.1, low: 0.4, high: 7.8 } }), result(prompts)];
+	// A harness that keeps changelog fragments, as relay-harness does (packages/<pkg>/.changes/README.md).
+	const withChanges = (file) => (file === "packages/coding-agent/.changes/README.md" ? "# Changelog fragments\n" : sources(file));
+	const cycleDir = mkdtempSync(join(tmpdir(), "loop-package-learned-"));
+	const pkg = packageRelease({ cycle: "2026-W43", cycleDir, results, proposals, arch, archText, sources: withChanges, ledger: emptyLedger(), champion: "0.6.121", release: "0.6.122-beta.1", model: "m", harnesses: ["Claude Code 2.1.310 (its exam stage is queued for a person)"] });
+	assert.equal(pkg.learned.length, 2);
+	assert.match(pkg.learned[0], /^In week 2026-W43 Relay learned to set queue\.\S+ from \d+ to \d+ and new words for its queue\.requestCheck prompt; its pre-screens measured \+4\.1 points \(interval 0\.4 to 7\.8, 24 practice tasks\) and \+2\.5 points \(interval -1\.2 to 6\.2, 24 practice tasks\) against relay@0\.6\.121\.$/);
+	assert.equal(pkg.learned[1], "It changes no row of the router's starting table, and this week's new harness version is Claude Code 2.1.310 (its exam stage is queued for a person).");
+	const body = readFileSync(join(cycleDir, "release", "PR_BODY.md"), "utf8");
+	assert.ok(body.includes(`## What Relay learned this week\n\n${pkg.learned.join(" ")}\n`), body.slice(0, 800));
+	assert.ok(body.indexOf("## What Relay learned this week") < body.indexOf("## The changes"));
+	assert.doesNotMatch(pkg.learned.join(" "), /\b(better|worse|improved|regressed|beats?)\b/i);
+	// The fragment is part of release.patch, a new file that applies at the champion with the rest.
+	assert.deepEqual(pkg.fragments, ["packages/coding-agent/.changes/loop-2026-w43.md"]);
+	const applied = applyAll(readFileSync(join(cycleDir, "release", "release.patch"), "utf8"), archText);
+	assert.equal(applied.status, 0, applied.stderr);
+	assert.equal(applied.read("packages/coding-agent/.changes/loop-2026-w43.md"), `- ${pkg.learned.join(" ")}\n`);
+	assert.match(applied.read("src/queue/request-check.ts"), /Check every case the request names/);
+	// A harness without fragments gets none, and the patch is the changes alone.
+	const plain = packageRelease({ cycle: "2026-W43", cycleDir, results, proposals, arch, archText, sources, ledger: emptyLedger(), champion: "0.6.121", release: "0.6.122-beta.1", model: "m", write: false });
+	assert.deepEqual(plain.fragments, []);
+	assert.doesNotMatch(plain.patch, /\.changes\//);
+	assert.match(plain.body, /## What Relay learned this week\n\nIn week 2026-W43 Relay learned .+ It changes no row of the router's starting table\.\n/, "no harness watch ran: nothing said about harnesses");
+});

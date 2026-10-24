@@ -21,12 +21,14 @@ const REPO = "cicada0007/relay-harness";
 const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
 const argOf = (args, name) => args[args.indexOf(name) + 1];
 
-/** A throwaway harness: a git repository with the fake relay.arch, its sources, a package.json at 0.6.121, and an
- *  origin/main ref where `git fetch` would have put it. */
+/** A throwaway harness: a git repository with the fake relay.arch, its sources, a package.json at 0.6.121, Relay's
+ *  changelog fragments folder, and an origin/main ref where `git fetch` would have put it. */
 function fakeHarness() {
 	const dir = mkdtempSync(join(tmpdir(), "autopilot-harness-"));
 	writeFileSync(join(dir, "relay.arch.json"), fakeArchText());
 	writeFileSync(join(dir, "package.json"), `${JSON.stringify({ name: "relay", private: true, version: "0.6.121" }, null, "\t")}\n`);
+	mkdirSync(join(dir, "packages", "coding-agent", ".changes"), { recursive: true });
+	writeFileSync(join(dir, "packages", "coding-agent", ".changes", "README.md"), "# Changelog fragments\n");
 	for (const [file, text] of Object.entries(SOURCES)) {
 		mkdirSync(join(dir, dirname(file)), { recursive: true });
 		writeFileSync(join(dir, file), text);
@@ -221,6 +223,10 @@ test("a whole week, every outside step faked: cycle, builds, pre-screen, release
 	assert.notEqual(st.release.commit, base);
 	assert.equal(w.harness.git("rev-parse", `${st.release.commit}^`), base);
 	assert.notEqual(w.harness.git("show", `${st.release.commit}:relay.arch.json`), w.harness.git("show", `${base}:relay.arch.json`));
+	// The release's changelog fragment is in that commit, with the pre-screen's numbers (the commit is fixed before the gate).
+	const fragment = w.harness.git("show", `${st.release.commit}:packages/coding-agent/.changes/loop-2026-w44.md`);
+	assert.match(fragment, /^- In week 2026-W44 Relay learned .+; its pre-screens? measured .+ It changes no row of the router's starting table, and this week's new harness version is Claude Code 2\.1\.310 \(its exam stage is queued for a person\)\.$/);
+	assert.doesNotMatch(fragment, /the gate on the exam measured/);
 	const push = ops.calls.find(([c, ...a]) => c === "git" && a.includes("push"));
 	assert.equal(push.at(-1), `${st.release.commit}:refs/heads/loop/2026-W44`);
 	assert.match(w.harness.git("worktree", "list"), /^[^\n]+$/, "every worktree was removed");
@@ -254,7 +260,17 @@ test("a whole week, every outside step faked: cycle, builds, pre-screen, release
 	assert.equal(argOf(pr, "--head"), "loop/2026-W44");
 	assert.ok(ops.calls.filter(([c]) => c === "gh").every((c) => c.includes("--repo")), "--repo on every gh command");
 	const body = readFileSync(argOf(pr, "--body-file"), "utf8");
-	for (const part of ["## The changes", "## The gate on the exam", "Verdict: PASS (exit 0)", st.release.sha256, "## The ledger entry", "## Roll back", "## Reproduce", "--candidate-package"]) assert.ok(body.includes(part), part);
+	for (const part of ["## What Relay learned this week", "## The changes", "## The gate on the exam", "Verdict: PASS (exit 0)", st.release.sha256, "## The ledger entry", "## Roll back", "## Reproduce", "--candidate-package"]) assert.ok(body.includes(part), part);
+	// What Relay learned, said with the gate's numbers: the change, the gate's difference and interval, the router rows
+	// and the harness version tried for the first time; numbers only.
+	const learned = body.slice(body.indexOf("## What Relay learned this week"), body.indexOf("## The changes"));
+	assert.equal(learned.split("\n").filter((l) => l.trim() && !l.startsWith("#")).length, 1, learned);
+	assert.match(learned, /^## What Relay learned this week\n\nIn week 2026-W44 Relay learned .+; the gate on the exam measured [+-]\d+\.\d points of requirements met against relay@0\.6\.121 \(interval -?\d+\.\d to -?\d+\.\d, 24 tasks, PASS\)\. It changes no row of the router's starting table, and this week's new harness version is Claude Code 2\.1\.310 \(its exam stage is queued for a person\)\.\n/);
+	assert.doesNotMatch(learned, /\b(better|worse|beats?|wins?)\b/i);
+	assert.equal(st.learned.length, 2);
+	assert.equal(st.learned.join(" "), learned.split("\n\n")[1].trim());
+	const packaged = readFileSync(join(w.out, "2026-W44", "release", "PR_BODY.md"), "utf8");
+	assert.match(packaged, /## What Relay learned this week\n\nIn week 2026-W44 Relay learned .+; its pre-screens? measured /, "before the gate, the package's body has the pre-screen's numbers");
 	const added = body.slice(body.indexOf("## The gate on the exam"));
 	assert.doesNotMatch(added, /\b(better|worse)\b/i, "numbers only");
 	assert.doesNotMatch(body, /## How it is judged/, "the package's how-to is replaced by what was done");
@@ -265,6 +281,7 @@ test("a whole week, every outside step faked: cycle, builds, pre-screen, release
 	assert.match(report, /\*\*A pull request waits for you:\*\* https:\/\/github\.com\/cicada0007\/relay-harness\/pull\/301/);
 	for (const part of ["## What Relay learned about itself", "## What it proposed", "## New harness versions", "## What it tested", "## What it cost"]) assert.ok(report.includes(part), part);
 	assert.match(report, /- Claude Code 2\.1\.310 came out on 23 Oct 2026 .*queued for a person/);
+	assert.match(report, /It says: In week 2026-W44 Relay learned /);
 	assert.match(readFileSync(join(w.out, "2026-W44", "report.md"), "utf8"), /Notes: .*Claude Code 2\.1\.310 came out on 23 Oct 2026/, "a line in the week's notes");
 	assert.doesNotMatch(report, /\b(better|worse)\b/i);
 
