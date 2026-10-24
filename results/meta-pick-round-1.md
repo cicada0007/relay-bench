@@ -18,7 +18,7 @@ Only pairs the grader scored differently need a choice; on every other pair any 
 "Claude Code alone" is Claude Code's attempt in each pair (trial 1 in the second row). "Grader's choice" is the
 attempt the hidden grader scored higher, which no picker can see.
 
-Where the picker chose a different attempt than Claude Code's (first row: trial 1's):
+Where the picker chose a different attempt than Claude Code's (in Claude Code + Claude Code, trial 1's):
 
 | Test | Chose another attempt | Grader scored it higher |
 |---|---:|---:|
