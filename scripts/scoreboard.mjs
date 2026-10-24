@@ -14,12 +14,18 @@
 // - The sealed exam (TIERS.md) is published as counts and scores only: no task names, no per-task numbers.
 // - No words for results: no "better", "worse" or "beats", only each number and its interval.
 //
-//   node scripts/scoreboard.mjs                       builds results/scoreboard.json from runs/ and ../relay-exam
+// - Each build also writes results/arm-outcomes.jsonl (scripts/arm-outcomes.mjs): the same public trials and picker
+//   answers as arm outcomes for the harness's router, which a person imports with `relay router learn --import <file>`.
+// - With --publish (off unless given), the week's file then goes to the public repository Relay-harness/relay as one
+//   pull request for a person to merge (scripts/publish-scoreboard.mjs).
+//
+//   node scripts/scoreboard.mjs                       builds results/scoreboard.json and results/arm-outcomes.jsonl
 //   node scripts/scoreboard.mjs --dry-run             prints what it would write
-//   node scripts/scoreboard.mjs --install-schedule weekly    the weekly job (macOS launchd; prints a crontab line)
+//   node scripts/scoreboard.mjs --publish             and opens the public page's pull request (scripts/publish-scoreboard.mjs)
+//   node scripts/scoreboard.mjs --install-schedule weekly [--publish]   the weekly job (macOS launchd; prints a crontab line)
 //   node scripts/scoreboard.mjs --remove-schedule
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -28,29 +34,15 @@ import { crontabLine, plist, plistPath, secretLike } from "../loop/schedule.mjs"
 import { buildGroups, defaultArms, droppedTasks, harborLoader, metaEntry, outcomeOf, patchLoader, PICKER_EFFORT, PICKER_MODEL, runPicks } from "../meta/pick-groups.mjs";
 import { bootstrap, loadRecords, RESAMPLES, SEED } from "../runner/analyze.mjs";
 import { BENCHMARKS, HARBOR_VERSION, loadBenchmark } from "../runner/harbor-bench.mjs";
+import { metaOf, sizeFactor } from "../runner/task-meta.mjs";
+import { E2B_USD_PER_SECOND } from "./draft-spend.mjs";
 import { BAR_STAGES } from "./export-bar.mjs";
+import { picksFor, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
+
+export { picksFor, SCANNED, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 export const REPOSITORY = "https://github.com/cicada0007/relay-bench";
-
-/**
- * Where each benchmark's records are, besides every stage folder under <runs>/scoreboard/ (runner/harbor-bench.mjs's
- * default, read by the benchmark its records name). `stage` is a Harbor stage folder under the runs folder; `reuse`
- * names picker answers from elsewhere that the entry may count (round 1's exam asked about these same pairs).
- */
-export const SOURCES = Object.freeze([{ benchmark: "terminal-bench-2-1", stage: "round-1/F", label: "Round 1, test F", reuse: ["meta/pick-exam-gpt-6.1-sol-medium.jsonl"] }]);
-export const SCANNED = "scoreboard";
-
-/** Every stage folder under <runs>/scoreboard/, as a source of the benchmark its first record names. */
-export function scannedSources(runsDir) {
-	const dir = join(runsDir, SCANNED);
-	if (!existsSync(dir)) return [];
-	return readdirSync(dir, { withFileTypes: true })
-		.filter((d) => d.isDirectory() && existsSync(join(dir, d.name, "records.jsonl")))
-		.map((d) => ({ benchmark: readJsonl(join(dir, d.name, "records.jsonl"))[0]?.benchmark, stage: join(SCANNED, d.name) }))
-		.filter((s) => s.benchmark)
-		.sort((a, b) => a.stage.localeCompare(b.stage));
-}
 
 /** Checked in Harbor's registry on 24 Oct 2026 (Harbor 0.24.0): asked for, and not there as an official release. */
 export const NOT_IN_REGISTRY = Object.freeze([
@@ -94,8 +86,24 @@ const byTaskOf = (records) => {
 	return tasks;
 };
 
+/**
+ * A trial's sandbox cost: what the runner recorded (runner/harbor-bench.mjs), else estimated from the trial's start and
+ * end at E2B's published price for 2 vCPU and 4 GiB, scaled up for a task that asks for more (runner/task-meta.mjs).
+ */
+export function sandboxOf(r, benchmark = r.benchmark) {
+	if (typeof r.sandbox?.usd === "number") return { usd: r.sandbox.usd, estimated: false };
+	const ms = Date.parse(r.finishedAt ?? "") - Date.parse(r.startedAt ?? "");
+	if (!Number.isFinite(ms) || ms < 0) return { usd: 0, estimated: true };
+	return { usd: (ms / 1000) * E2B_USD_PER_SECOND * sizeFactor(metaOf(benchmark, r.task)), estimated: true };
+}
+
+const sandboxTotals = (records, benchmark) => {
+	const each = records.map((r) => sandboxOf(r, benchmark));
+	return { sandboxUsd: each.reduce((s, x) => s + x.usd, 0), sandboxEstimatedTrials: each.filter((x) => x.estimated).length };
+};
+
 /** One single tool's numbers on one run: as runner/tb21-analyze.mjs reports a tool, for any grade. */
-export function toolEntry(tool, records) {
+export function toolEntry(tool, records, benchmark = undefined) {
 	const tasks = byTaskOf(records);
 	const scores = [...tasks.values()].map((rs) => 100 * mean(rs.map(outcomeOf)));
 	const cost = records.reduce((s, r) => s + (r.usage?.costUsd ?? 0), 0);
@@ -111,6 +119,7 @@ export function toolEntry(tool, records) {
 		...(scores.length > 1 ? bootstrap(scores) : { low: null, high: null }),
 		allTrialsSolved: tasks.size ? 100 * mean([...tasks.values()].map((rs) => (rs.every((r) => outcomeOf(r) === 1) ? 1 : 0))) : null,
 		costUsd: cost,
+		...sandboxTotals(records, benchmark),
 		costPerSolvedUsd: solves ? cost / solves : null,
 		medianMinutes: minutes.length ? minutes[Math.floor(minutes.length / 2)] / 60_000 : null,
 		unmeteredTrials: records.filter((r) => !r.usage).length,
@@ -134,18 +143,21 @@ export function difference(a, b) {
  * differences: the meta-harness minus each tool, and Relay minus each other tool. `loader` reads an attempt's evidence
  * for the picker's input; `reuse` holds the picker answers this run may count; nothing is asked.
  */
-export async function scoreRun({ records, loader, reuse = [], planned = null, sealed = false }) {
+export async function scoreRun({ records, loader, reuse = [], planned = null, sealed = false, benchmark = undefined }) {
 	const dropped = droppedTasks(records);
 	const counted = records.filter((r) => !dropped.includes(r.task));
 	const tools = [...new Set(counted.map((r) => r.tool))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-	const entries = tools.map((tool) => toolEntry(tool, counted.filter((r) => r.tool === tool)));
+	const entries = tools.map((tool) => toolEntry(tool, counted.filter((r) => r.tool === tool), benchmark));
 	const scores = new Map(tools.map((tool) => [tool, taskScores(counted.filter((r) => r.tool === tool).map((r) => ({ task: r.task, value: outcomeOf(r) })))]));
 	if (tools.length >= 2) {
 		const arms = defaultArms(counted);
 		const { groups } = buildGroups(records, arms);
 		const picked = await runPicks({ groups, loader, reuse, ask: "split", dryRun: true, log: () => {} });
 		const entry = metaEntry({ rows: picked.rows, groups, left: picked.left, arms });
-		entries.push({ id: "meta", name: "Relay meta-harness", ...entry });
+		// Its sandboxes: every attempt of every group it was scored on.
+		const decided = new Set(picked.rows.map((r) => r.key));
+		const sandbox = sandboxTotals(groups.filter((g) => decided.has(g.key)).flatMap((g) => g.attempts.map((a) => a.record)), benchmark);
+		entries.push({ id: "meta", name: "Relay meta-harness", ...entry, ...sandbox });
 		scores.set("meta", taskScores(picked.rows.map((r) => ({ task: r.task, value: r.metaOutcome }))));
 	}
 	const differences = [];
@@ -173,12 +185,6 @@ export async function scoreRun({ records, loader, reuse = [], planned = null, se
 		entries,
 		differences,
 	};
-}
-
-/** Picker answers a stage may count: its own picks file, and the source's `reuse` files under the runs folder. */
-export function picksFor(stageDir, runsDir, reuse = []) {
-	const own = join(stageDir, "meta", `picks-${PICKER_MODEL}-${PICKER_EFFORT}.jsonl`);
-	return [own, ...reuse.map((p) => join(runsDir, p))].flatMap(readJsonl);
 }
 
 const runsOf = (records) => {
@@ -216,7 +222,7 @@ export async function publicBenchmark(id, runsDir, sources = [...SOURCES, ...sca
 		for (const [, rs] of runsOf(records)) {
 			const { test, model } = rs[0];
 			const planned = sample ?? (test.startsWith("dev-") ? null : bench.tasks.map((t) => t.name));
-			const result = await scoreRun({ records: rs, loader: harborLoader(stageDir), reuse, planned });
+			const result = await scoreRun({ records: rs, loader: harborLoader(stageDir), reuse, planned, benchmark: id });
 			out.runs.push({ test, label: source.label ?? test, model, modelName: MODEL_NAMES[model] ?? model, ...(sample ? { sample: sample.length } : {}), ...result });
 		}
 	}
@@ -242,7 +248,7 @@ export async function examBenchmark(examDir) {
 		for (const stage of BAR_STAGES) {
 			const records = loadRecords(runsDir, stage.id);
 			if (!records.length) continue;
-			const result = await scoreRun({ records, loader: patchLoader(runsDir, [tasksDir]), reuse, sealed: true });
+			const result = await scoreRun({ records, loader: patchLoader(runsDir, [tasksDir]), reuse, sealed: true, benchmark: "exam" });
 			out.runs.push({ test: stage.id, label: stage.title, model: stage.model, modelName: MODEL_NAMES[stage.model] ?? stage.model, ...(stage.sample ? { sample: stage.sample } : {}), ...result });
 		}
 	}
@@ -284,6 +290,7 @@ export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), gene
 			score: "Solved (Terminal-Bench), resolved (SWE-bench) or requirements met (the exam), percent.",
 			allTrialsSolved: "The share of tasks where every trial succeeded, percent.",
 			costUsd: "Metered model spend of every trial counted, in dollars.",
+			sandboxUsd: "Sandbox time of every trial counted, apart from the model spend, at E2B's published price per second for 2 vCPU and 4 GiB (more for a task that asks for a larger sandbox), in dollars; for the meta-harness, every attempt of its groups. A trial that did not record its sandbox time is estimated from its start and end (sandboxEstimatedTrials).",
 			costPerSolvedUsd: "Metered cost divided by the trials (or, for the meta-harness, the groups) that succeeded.",
 			medianMinutes: "Median wall time of a trial; for the meta-harness, of its slowest attempt in a group plus the picker's measured time.",
 		},
@@ -321,6 +328,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			runs: { type: "string", default: join(ROOT, "runs") },
 			exam: { type: "string", default: join(ROOT, "..", "relay-exam") },
 			to: { type: "string", default: join(ROOT, "results", "scoreboard.json") },
+			"arm-outcomes": { type: "string", default: join(ROOT, "results", "arm-outcomes.jsonl") },
+			publish: { type: "boolean", default: false },
+			public: { type: "string", default: join(ROOT, "..", "relay-public") },
 			week: { type: "string" },
 			weekly: { type: "boolean", default: false },
 			"dry-run": { type: "boolean", default: false },
@@ -332,13 +342,13 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		if (args["install-schedule"] !== "weekly") throw new Error("--install-schedule takes weekly");
 		const bench = ROOT.replace(/\/$/, "");
 		const logDir = join(bench, "runs", "scoreboard");
-		const schedArgs = scheduleArgsFor();
+		const schedArgs = scheduleArgsFor(args.publish ? ["--publish"] : []);
 		const text = plist({ bench, node: process.execPath, args: schedArgs, logDir, when: SCHEDULE_WHEN, script: "scripts/scoreboard.mjs", label: SCHEDULE_LABEL });
 		const path = plistPath(homedir(), SCHEDULE_LABEL);
 		mkdirSync(dirname(path), { recursive: true });
 		mkdirSync(logDir, { recursive: true });
 		writeFileSync(path, text);
-		console.log(`wrote ${path}: every Monday at 07:00, node scripts/scoreboard.mjs ${schedArgs.join(" ")} (free: it reads records, asks nothing)`);
+		console.log(`wrote ${path}: every Monday at 07:00, node scripts/scoreboard.mjs ${schedArgs.join(" ")} (free: it reads records, asks nothing${args.publish ? "; then opens the public page's pull request with gh" : ""})`);
 		const uid = String(process.getuid?.() ?? "");
 		spawnSync("launchctl", ["bootout", `gui/${uid}/${SCHEDULE_LABEL}`]);
 		const loaded = spawnSync("launchctl", ["bootstrap", `gui/${uid}`, path], { encoding: "utf8" });
@@ -369,8 +379,22 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			for (const e of run.entries) console.log(`    ${e.name.padEnd(24)} ${pct(e.score).padStart(6)}  ${pct(e.low)} to ${pct(e.high)}  cost/solved ${usd(e.costPerSolvedUsd)}${e.kind === "meta" && e.groupsNotDecided ? `  (${e.groupsNotDecided} groups not picked yet)` : ""}`);
 		}
 	}
-	if (args["dry-run"]) process.exit(0);
+	const { buildArmOutcomes, describeStages, writeArmOutcomes } = await import("./arm-outcomes.mjs");
+	const outcomes = await buildArmOutcomes({ runsDir: resolve(args.runs) });
+	for (const line of describeStages(outcomes.stages)) console.log(`arm outcomes, ${line}`);
+	if (args["dry-run"]) {
+		console.log(`${outcomes.lines.length} arm outcomes${outcomes.problems.length ? `, ${outcomes.problems.length} not in the import format` : ""}; dry run, nothing written`);
+		process.exit(0);
+	}
 	mkdirSync(dirname(args.to), { recursive: true });
 	writeFileSync(args.to, `${JSON.stringify(board, null, 2)}\n`);
 	console.log(`wrote ${args.to} (week ${board.week})`);
+	writeArmOutcomes(resolve(args["arm-outcomes"]), outcomes);
+	console.log(`wrote ${resolve(args["arm-outcomes"])}: ${outcomes.lines.length} arm outcomes for the router (relay router learn --import <file>)`);
+	if (args.publish) {
+		const { describePublish, publishScoreboard } = await import("./publish-scoreboard.mjs");
+		const published = publishScoreboard({ from: resolve(args.to), publicDir: resolve(args.public), log: (l) => console.log(`publish: ${l}`) });
+		console.log(`publish: ${describePublish(published)}`);
+		if (published.status === "refused") process.exitCode = 1;
+	}
 }

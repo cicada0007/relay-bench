@@ -38,6 +38,7 @@ import { showOrder } from "../meta/pick.mjs";
 import { providerOf } from "../runner/arms.mjs";
 import { BENCHMARKS, loadBenchmark } from "../runner/harbor-bench.mjs";
 import { metaOf, readTaskMeta, TASK_META } from "../runner/task-meta.mjs";
+import { picksFor, SOURCES, scannedSources } from "./scoreboard-sources.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 export const OUT = join(ROOT, "results", "arm-outcomes.jsonl");
@@ -247,15 +248,14 @@ const readJsonl = (path) => (existsSync(path) ? readFileSync(path, "utf8").split
  * Asks nothing: the picker's answers come from the files the stages already hold.
  */
 export async function buildArmOutcomes({ runsDir, sources = null, meta = readTaskMeta() }) {
-	const board = await import("./scoreboard.mjs");
-	const all = sources ?? [...board.SOURCES, ...board.scannedSources(runsDir)];
+	const all = sources ?? [...SOURCES, ...scannedSources(runsDir)];
 	const lines = [];
 	const stages = [];
 	for (const source of all) {
 		if (!BENCHMARKS[source.benchmark]) continue;
 		const stageDir = join(runsDir, source.stage);
 		const records = readJsonl(join(stageDir, "records.jsonl"));
-		const reuse = board.picksFor(stageDir, runsDir, source.reuse);
+		const reuse = picksFor(stageDir, runsDir, source.reuse);
 		const runs = new Map();
 		for (const r of records) {
 			const id = `${r.test}|${r.model}`;
