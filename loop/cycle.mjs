@@ -5,7 +5,9 @@
 //   analyze     failure clusters from practice and public runs and Relay's queue reports (free)
 //   propose     changes, one lane each, checked against their lane and the invariants: the rules lanes free, the
 //               writer lanes (prompts and skills, tools) PAID, one model call each, and taught skills (--teaching,
-//               the skill candidates teaching/graduate.mjs wrote; TEACHING.md) free, in the prompts and skills lane
+//               the skill candidates teaching/graduate.mjs wrote; TEACHING.md) free, in the prompts and skills lane;
+//               with --arm-outcomes (the benchmark's arm outcomes, results/arm-outcomes.jsonl), the router's starting
+//               table in the routing lane, free
 //   exam        kinds of task the exam should mine more of, into the exam's approval queue (free; never approved)
 //   prescreen   PAID: each proposal's build against the champion on the dev set (practice), then the selection set
 //               (the check tier's one word), within each lane's fixed budget and the command's --spend-cap
@@ -15,7 +17,8 @@
 //
 //   node loop/cycle.mjs --records runs/round-1/records.jsonl [--records runs/round-1/F/records.jsonl] \
 //     --harness ../prime-agent-main --harness-ref origin/feat/architecture-as-code --champion 0.6.121 \
-//     [--exam ../relay-exam] [--teaching runs/teaching] [--spend-cap 20 | --dry-run] [--cycle 2026-W43] [--out runs/loop]
+//     [--exam ../relay-exam] [--teaching runs/teaching] [--arm-outcomes results/arm-outcomes.jsonl] \
+//     [--spend-cap 20 | --dry-run] [--cycle 2026-W43] [--out runs/loop]
 //
 // Without --spend-cap it stops before the first paid step and says what waits and the most it could cost (exit 3).
 // --dry-run writes nothing and spends nothing. A cycle run again resumes: its analysis and proposals are fixed at its
@@ -23,6 +26,7 @@
 // (node loop/meta.mjs approve). Output: <out>/<cycle>/ holds cycle.json, report.md, summary.json, spend.jsonl, one
 // patch per proposal, and release/ with the package.
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -34,7 +38,8 @@ import { judgeMeta, loadSettings, metaProposals, PAID_LANES, readCycles, SETTING
 import { describeChange, packageRelease } from "./package.mjs";
 import { prescreen, prescreenPlan, wallet } from "./prescreen.mjs";
 import { readCandidates } from "../teaching/graduate.mjs";
-import { examProposalProblems, examProposals, ruleCandidates, selectProposals, teachingProposals, writeProposal, writerInput, writerTargets } from "./propose.mjs";
+import { parseOutcomeLines } from "../scripts/arm-outcomes.mjs";
+import { examProposalProblems, examProposals, routerCandidates, ruleCandidates, selectProposals, teachingProposals, writeProposal, writerInput, writerTargets } from "./propose.mjs";
 import { anthropicWriter, DEFAULT_WRITER_MODEL, writerProblems } from "./writer.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -91,6 +96,7 @@ export async function runCycle({
 	model = "claude-haiku-5-5",
 	exam = null,
 	teaching = null,
+	armOutcomes = null,
 	packages = null,
 	ledgerPath = undefined,
 	spendCap = null,
@@ -187,11 +193,26 @@ export async function runCycle({
 			const { candidates, notes } = ruleCandidates({ cycle, analysis: a, arch, archText, settings, sources });
 			// Taught skills: free, in the prompts and skills lane, gated like any other proposal (TEACHING.md).
 			const taught = teaching ? teachingProposals({ cycle, ...readCandidates(resolve(teaching)), arch, clusters: a.clusters, settings }) : { candidates: [], refused: [], notes: [] };
-			const selected = selectProposals([...candidates, ...taught.candidates], { settings, arch, sources });
+			// The router's starting table: free, in the routing lane, from the benchmark's arm outcomes (D-101).
+			const router = { candidates: [], notes: [] };
+			if (armOutcomes) {
+				const path = resolve(armOutcomes);
+				if (!existsSync(path)) router.notes.push(`router: no arm outcomes at ${path} (node scripts/arm-outcomes.mjs writes them)`);
+				else {
+					const text = readFileSync(path, "utf8");
+					const { outcomes, problems } = parseOutcomeLines(text);
+					state.armOutcomes = { path, sha256: createHash("sha256").update(text).digest("hex"), outcomes: outcomes.length, leftOut: problems.length };
+					if (problems.length) router.notes.push(`router: ${problems.length} lines of ${path} are not arm outcomes and were left out (${problems[0]})`);
+					const r = routerCandidates({ cycle, outcomes, arch, archText, settings, sources, file: "the arm outcomes" });
+					router.candidates.push(...r.candidates);
+					router.notes.push(...r.notes);
+				}
+			}
+			const selected = selectProposals([...candidates, ...router.candidates, ...taught.candidates], { settings, arch, sources });
 			state.proposals = selected.proposals.map(keep);
 			state.refused = [...taught.refused, ...selected.refused];
 			state.held = selected.held;
-			state.notes = [...notes, ...taught.notes];
+			state.notes = [...notes, ...router.notes, ...taught.notes];
 			state.written = [];
 		}
 		// Writer lanes: one paid call per target, while its worst case fits.
@@ -303,7 +324,7 @@ export async function runCycle({
 			const pkg = packageRelease({ cycle, cycleDir: dir, results, proposals: toScreen, arch, archText, sources, ledger, champion, release: rel, model, write: !dryRun });
 			if (pkg.empty) done("package", "skipped", pkg.empty);
 			else {
-				state.package = { lanes: pkg.lanes, risk: pkg.risk, held: pkg.held, files: pkg.files };
+				state.package = { lanes: pkg.lanes, risk: pkg.risk, held: pkg.held, files: pkg.files, ...(pkg.relayMeta ? { relayMeta: true } : {}) };
 				save();
 				done("package", "ran", `one release of ${pkg.lanes.length} lane${pkg.lanes.length === 1 ? "" : "s"} (${pkg.lanes.map((l) => l.lane).join(", ")}), risk ${pkg.risk}; ${dryRun ? "dry run, nothing written" : `written to ${pkg.dir}`}; not opened anywhere`);
 			}
@@ -417,6 +438,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			model: { type: "string", default: "claude-haiku-5-5" },
 			exam: { type: "string" },
 			teaching: { type: "string" },
+			"arm-outcomes": { type: "string" },
 			packages: { type: "string" },
 			ledger: { type: "string" },
 			"spend-cap": { type: "string" },
@@ -441,6 +463,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		model: values.model,
 		exam: values.exam ? resolve(values.exam) : null,
 		teaching: values.teaching ? resolve(values.teaching) : null,
+		armOutcomes: values["arm-outcomes"] ? resolve(values["arm-outcomes"]) : null,
 		packages: values.packages ? resolve(values.packages) : null,
 		ledgerPath: values.ledger ? resolve(values.ledger) : undefined,
 		spendCap,

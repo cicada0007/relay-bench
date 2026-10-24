@@ -16,6 +16,9 @@
 // --relay-package <tgz> gives the tool relay@pkg a Relay build that is not released (a pre-screen, GATE.md): only that
 // tool's runs get it, and only in a test whose name starts with dev or pilot. A local build the gate judges
 // (relay@0.6.122-loop.2026w44, GATE.md amendment 4) gets it in a counted test too, and is the only tool that may.
+//
+// --relay-meta runs every Relay arm with its meta-harness on (RELAY_META=1), the same for every Relay arm of the stage:
+// for the runs that judge a change to a value that acts only with it on, such as the router's (GATE.md, amendment 5).
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -43,6 +46,7 @@ const { values: args } = parseArgs({
 		faults: { type: "string" },
 		sample: { type: "string" },
 		"relay-package": { type: "string" },
+		"relay-meta": { type: "boolean", default: false },
 	},
 });
 for (const name of ["test", "model", "cap-usd", "stage-cap-usd"]) if (!args[name]) throw new Error(`--${name} is required`);
@@ -164,6 +168,7 @@ console.log(
 	`stage ${args.test}: ${jobs.length} runs planned, ${jobs.length - pending.length} already done, ${pending.length} to go; ` +
 		`spent $${stageSpent().toFixed(2)} of $${stageCap}; sandboxes about $${e2bSpent().toFixed(2)} of $${e2bCap} for the round`,
 );
+if (args["relay-meta"]) console.log("every Relay arm runs with its meta-harness on (RELAY_META=1)");
 if (args["dry-run"]) {
 	for (const j of pending.slice(0, 20)) console.log(`  would run ${runKey(j)}`);
 	process.exit(0);
@@ -180,6 +185,7 @@ function runOne(job) {
 				"--cap-usd", String(capUsd), "--test", args.test, "--out", args.out, "--tasks-dir", args["tasks-dir"],
 				...(job.fault ? ["--fault", job.fault] : []),
 				...(armFor(job.tool).relayPackage ? ["--relay-package", resolve(args["relay-package"])] : []),
+				...(args["relay-meta"] ? ["--relay-meta"] : []),
 			],
 			{ stdio: ["ignore", "pipe", "pipe"] },
 		);

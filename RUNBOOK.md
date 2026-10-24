@@ -352,7 +352,7 @@ The lanes, each with a fixed budget per cycle in `loop/settings.json` (estimates
 | Lane | What it may change | How | Budget |
 | --- | --- | --- | --- |
 | config | relay.arch `queue.stuck`, `queue.requestCheck`, attempts, a plan's size, turns per attempt | the loop's rules | $6 |
-| routing | relay.arch `routing`: the tiers' models, the suitability table, the Decider's share (D-46, D-60, D-61) | the loop's rules | $6 |
+| routing | relay.arch `routing`: the tiers' models, the suitability table, the Decider's share (D-46, D-60, D-61); and the meta-harness's router: `router.table`, `router.verifierShare`, `router.minArmUsd` (D-101), from the benchmark's arm outcomes (`--arm-outcomes`) | the loop's rules | $6 |
 | memory | relay.arch `memory.autoRefine`, the learning mode (D-90), from the learning ablation's two arms | the loop's rules | $6 |
 | tools | the text of a `tool.*` prompt (the tools as the model sees them) | a model writes it | $6 |
 | prompts and skills | the text of one prompt relay.arch lists, or a skill's SKILL.md; or a new skill taught from shared lessons (`--teaching`) | a model writes it; a taught skill is free | $8 |
@@ -416,6 +416,33 @@ node loop/cycle.mjs --records ... --harness ../prime-agent-main --champion 0.6.1
 The first prints the rule (at least 5 machines and 25 passing uses per group of near-duplicates), the candidates and
 what it skipped; `--json` prints the same as numbers. The second adds each candidate as a free proposal that adds one
 new SKILL.md, checked and pre-screened like the rest.
+
+### The router's starting table
+
+**Not yet run**, like the loop. With `--arm-outcomes` (off unless given), the routing lane reads the benchmark's arm
+outcomes, the file the weekly scoreboard writes for the harness's router (`results/arm-outcomes.jsonl`, "The router's
+evidence" below), and proposes a change to one row of relay.arch's `router.table`, free:
+
+```
+node loop/cycle.mjs --records ... --harness ../prime-agent-main --champion 0.6.121 --arm-outcomes results/arm-outcomes.jsonl
+node loop/autopilot.mjs --spend-cap 20 --signed-by <your name> --arm-outcomes results/arm-outcomes.jsonl
+```
+
+- **The rule.** Each benchmark run is counted on the first row of the starting table its kind and difficulty match, as
+  the harness reads the table. On a row's runs, the set of arms with the most proven results per dollar (runs where an
+  attempt passed the benchmark's hidden tests and the picker kept it, over what every attempt spent) becomes that row's
+  proposal when it gave more per dollar than the row's own arms. Both need `routing.minSamples` runs (5). A set proven
+  more than 5 points less often than the row's own (the gate's non-inferiority margin) is not proposed, and the cycle's
+  notes say so, as they say why every other row proposed nothing. The new row keeps, for an attempt of another harness,
+  the arm that takes its place when that harness cannot be used here.
+- **One a cycle.** The routing lane keeps one proposal a cycle, the one with the most runs behind it; the next waits.
+  `router.verifierShare` and `router.minArmUsd` are the lane's to change too; no rule proposes them yet.
+- **Judged with the meta-harness on.** The router acts only while Relay's meta-harness is on (`RELAY_META=1`), so the
+  pre-screen and the gate run every Relay arm with it on, the champion's and the candidate's alike (`--relay-meta`,
+  GATE.md amendment 5); the package's `PR_BODY.md` and the gate command say so.
+- **Round 1's evidence proposes nothing:** on Terminal-Bench 2.1 one Relay attempt gave the most proven results per
+  dollar on medium tasks, the starting table's own arms; on hard tasks it gave more per dollar than Relay and Claude
+  Code together but 13 points less often, past the margin.
 
 ## The bar: five tools on the exam
 
@@ -537,12 +564,15 @@ which has Haiku 5.5's list prices. Use the Relay release of the day for `--relay
 1. **Harbor 0.24.0:** `uv tool install 'harbor[e2b]==0.24.0'`.
 2. **Keys in the environment, never on the command line:** `RELAY_BENCH_ANTHROPIC_KEY`, `RELAY_BENCH_OPENAI_KEY` and
    `E2B_API_KEY`. Each trial gets only its model's key.
-3. **Smoke trials** (dev, about $1 in all), one task each. For Codex, check that the meter saw its traffic before any
-   counted trial: `meter.jsonl` must have lines with `"transport":"websocket"` and a `costUsd`.
+3. **Smoke trials** (dev, about $1 in all), one task each. Codex must show the meter its traffic before any counted
+   trial, and harbor-bench checks it by itself: a stage with Codex whose test does not start with `dev-` refuses to
+   start until a dev trial of the pinned Codex (0.163.0) left a `meter.jsonl` with lines that have
+   `"transport":"websocket"` and a `costUsd`, in `runs/dev`, the stage's `--out` folder or a folder named with
+   `--codex-smoke`. The check reads files and is free; `--dry-run` prints what it found. A person runs the smoke:
 
    ```
-   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench --tasks astropy__astropy-12907 --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --out runs/dev
-   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench-openai --tasks astropy__astropy-12907 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --out runs/dev
+   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench --tasks astropy__astropy-12907 --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --e2b-cap-usd 1 --out runs/dev
+   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench-openai --tasks astropy__astropy-12907 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --e2b-cap-usd 1 --out runs/dev
    rg -c '"transport":"websocket"' runs/dev/dev-swebench-openai/jobs/*/*/agent/meter.jsonl
    ```
 
@@ -553,19 +583,32 @@ which has Haiku 5.5's list prices. Use the Relay release of the day for `--relay
 ### The runs
 
 Add `--dry-run` to any command to see the plan and the most it could cost, free. Each stage resumes when run again and
-stops at its own cap; records land in `runs/scoreboard/<bench>-<model>/`. Only model spend is capped here; E2B bills
-sandbox time apart, as in test F.
+stops at its own caps; records land in `runs/scoreboard/<bench>-<model>/`.
+
+- **Model spend:** `--cap-usd` a trial (the meter refuses requests past it) and `--stage-cap-usd` the stage.
+- **Sandbox time**, which E2B bills apart: `--e2b-trial-cap-usd` a trial ($0.25 unless given, about 90 minutes of a
+  2 vCPU, 4 GiB sandbox; fewer minutes for a task that asks for a larger one, `runner/task-meta.json`) and
+  `--e2b-cap-usd` the stage, required for a paid run. Two minutes before a trial's cap Harbor is interrupted, which
+  stops the sandbox and writes the trial's result in that time; the trial is recorded as stopped at its sandbox cap,
+  the tool's limit once the tool had started, as a spend cap is. A trial starts only while the stage's sandbox spend plus every trial in flight at its cap
+  fits `--e2b-cap-usd`, and a retry only while it still fits. If Harbor does not stop within two minutes of the
+  interrupt, it is killed and the stage stops at once, saying the sandbox may still be running: check E2B's dashboard.
+- Each record and `spend.jsonl` line holds the trial's sandbox seconds and dollars (`sandbox`, `sandboxUsd`) beside
+  its model cost, at E2B's published price (`scripts/draft-spend.mjs`), from the Harbor job's start to its exit, so it
+  never counts less than E2B bills.
 
 | Run | Command | Trials | Cap |
 | --- | --- | ---: | ---: |
-| SWE-bench Verified, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 |
-| SWE-bench Verified, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 |
-| SWE-bench Pro, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 |
-| SWE-bench Pro, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 |
-| Terminal-Bench 2.1, GPT-6 Luna | `node runner/harbor-bench.mjs --bench terminal-bench-2-1 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 2 --cap-usd 1 --stage-cap-usd 45 --concurrency 4 --out runs/scoreboard` | 356 | $45 |
+| SWE-bench Verified, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --e2b-cap-usd 60 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 + $60 |
+| SWE-bench Verified, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --e2b-cap-usd 60 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 + $60 |
+| SWE-bench Pro, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --e2b-cap-usd 90 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 + $90 |
+| SWE-bench Pro, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --e2b-cap-usd 90 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 + $90 |
+| Terminal-Bench 2.1, GPT-6 Luna | `node runner/harbor-bench.mjs --bench terminal-bench-2-1 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 2 --cap-usd 1 --stage-cap-usd 45 --e2b-cap-usd 20 --concurrency 4 --out runs/scoreboard` | 356 | $45 + $20 |
 
 Test F's mean cost per trial on Haiku 5.5 was $0.02 (Relay) and $0.04 (Claude Code); a SWE-bench trial reads a real
-repository and is estimated at about $0.10. A run cut short (`--sample n` for a fixed draw of n tasks) is marked on the scoreboard with the trials it
+repository and is estimated at about $0.10. Test F's trials held their sandboxes about 400 seconds each, $0.02 at E2B's
+price, the longest about an hour; the sandbox caps above assume a SWE-bench trial takes up to three times that, and are
+estimates for the founders to confirm, as the model caps are. A run cut short (`--sample n` for a fixed draw of n tasks) is marked on the scoreboard with the trials it
 did not make.
 
 ### The meta-harness's picks
@@ -600,13 +643,49 @@ node scripts/scoreboard.mjs --install-schedule weekly    # every Monday at 07:00
 
 It reads `runs/round-1/F/`, every stage under `runs/scoreboard/`, and the bar's stages in `../relay-exam/runs/bar/`. It
 never runs a trial or asks the picker, so the weekly job costs nothing; the week's numbers change when a person runs a
-stage or the picker with a cap. Each week's headline numbers are added to the file's `history`, and a second build in the
+stage or the picker with a cap. Each entry's `sandboxUsd` is its trials' sandbox time at E2B's price, apart from the
+model's `costUsd`: as the runner recorded it, or for a trial that recorded none (round 1's), estimated from its start
+and end (`sandboxEstimatedTrials`). Each week's headline numbers are added to the file's `history`, and a second build in the
 same week replaces that week's lines. A group the picker has not answered yet is counted (`groupsNotDecided`), never
 guessed, and its run stays `"in progress"`.
 
-To publish, copy the file into the public repository and render its page there, then open a pull request:
+To publish, one command opens a pull request in the public repository Relay-harness/relay for a person to merge:
 
 ```
-cp results/scoreboard.json ../relay-public/benchmarks/scoreboard/scoreboard.json
-node ../relay-public/benchmarks/scoreboard/render.mjs
+node scripts/publish-scoreboard.mjs --dry-run      # everything but the push and the pull request
+node scripts/publish-scoreboard.mjs                # or: node scripts/scoreboard.mjs --publish
 ```
+
+It works in a detached worktree of `../relay-public` (the checkout itself is never changed), copies the file to
+`benchmarks/scoreboard/scoreboard.json`, renders the page with that repository's `render.mjs`, and runs its
+`--check` (the page is the file's rendering, and neither holds a word for a result); a failed check pushes nothing.
+Then it pushes the branch `scoreboard/<week>` and opens one pull request with `gh --repo Relay-harness/relay`; a second
+run in the same week adds a commit to the open one, and a file the page already shows publishes nothing. The weekly
+job publishes only when installed with `--publish` (`node scripts/scoreboard.mjs --install-schedule weekly --publish`),
+and needs `gh` signed in for the person whose job it is. The page does not yet show the sandbox cost column; its
+`render.mjs` reads only the fields it knows.
+
+### The router's evidence
+
+Every build of the scoreboard also writes `results/arm-outcomes.jsonl` (`scripts/arm-outcomes.mjs`), free: the same
+public trials and picker answers as arm outcomes for the harness's router (relay-harness D-101), in the format its
+`docs/queue.md` documents ("The router"). A person imports them on their own machine:
+
+```
+relay router learn --import results/arm-outcomes.jsonl
+node scripts/arm-outcomes.mjs --check results/arm-outcomes.jsonl     # each line against the import format, free
+```
+
+- **A run is one task worked once**, its lines sharing `projectKey` (`bench/<benchmark>`), `taskId` (the task, the
+  trial number and the arms) and `at` (its first attempt's start). Each picker group is a run of every tool's attempt
+  (`picked` is the picker's choice; where every attempt had the same grade and the picker was not asked, the attempt it
+  would have been shown first, an order fixed by the group, never by the tool). Each of Relay's trials is also a
+  one-arm run, as the starting table's one-arm rows start it (picked when it passed). Claude Code and Codex appear only
+  beside Relay, so an import never makes another harness usable by solving tasks alone.
+- **`verified` is the benchmark's grade** (the hidden tests passed), `costUsd` the arm's model spend, `arm.strategy`
+  `direct`, `arm.where` `e2b`. **Kind and difficulty** come from the task's own metadata (`runner/task-meta.json`, from
+  each task's task.toml at its pinned digest: `node scripts/arm-outcomes.mjs --write-task-meta`): Terminal-Bench gives a
+  difficulty and a category (debugging is a bug fix; the others are other tasks). Without it, SWE-bench Verified's
+  tasks are bug fixes and SWE-bench Pro's other tasks, and the difficulty is medium.
+- **Left out and counted:** tasks dropped for every tool, groups not picked yet, groups where an attempt kept no record
+  of its actions, and the sealed exam (never named in a public file). One line outside the import format writes nothing.

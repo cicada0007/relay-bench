@@ -14,7 +14,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { addsNewFile, newFileDiff, newFileText, serializeLike, setPath, unifiedDiff } from "./diff.mjs";
-import { LANE_ORDER, LANES } from "./lanes.mjs";
+import { LANE_ORDER, LANES, needsMetaHarness } from "./lanes.mjs";
 import { applyToText, maxRisk } from "./propose.mjs";
 
 const f = (x, d = 1) => (x === null || x === undefined || !Number.isFinite(x) ? "–" : x.toFixed(d));
@@ -137,10 +137,12 @@ export function prBody({ cycle, release, champion, chosen, results, arch, held, 
 		lines.push(`### ${LANES[p.lane].label}: ${p.title.replace(/^[^:]+: /, "")}`, "");
 		lines.push(`- **What:** ${p.words}.`);
 		if (p.change?.kind === "arch") {
-			lines.push(`- **relay.arch:** \`${p.change.path}\` from \`${fmt(p.change.from)}\` to \`${fmt(p.change.to)}\`${p.change.setHere ? " (set in relay.arch, D-91)" : `; the code holds it: \`${p.change.code?.file} ${p.change.code?.symbol}\`${p.change.code?.patched ? ", changed in this patch" : ", to be changed by hand"}`}.`);
+			if (p.change.summary) lines.push(`- **relay.arch:** \`${p.change.path}\`, ${p.change.summary} (set in relay.arch, D-91).`);
+			else lines.push(`- **relay.arch:** \`${p.change.path}\` from \`${fmt(p.change.from)}\` to \`${fmt(p.change.to)}\`${p.change.setHere ? " (set in relay.arch, D-91)" : `; the code holds it: \`${p.change.code?.file} ${p.change.code?.symbol}\`${p.change.code?.patched ? ", changed in this patch" : ", to be changed by hand"}`}.`);
 		} else if (p.change?.kind === "skill") lines.push(`- **Source:** a new skill, \`${p.change.file}\`, graduated from lessons people chose to share (relay-bench teaching/, TEACHING.md); no model wrote it.`);
 		else lines.push(`- **Source:** \`${p.change.file}\`, the text of \`${p.change.symbol}\` (${p.change.prompt}), written by ${p.change.writer ?? "the loop's writer"} and checked to stay inside it.`);
 		if (p.change?.kind === "skill") lines.push(`- **Why:** ${p.evidence?.machines ?? "–"} machines shared it, after it was used in ${p.evidence?.passes ?? "–"} tasks there that passed their checks.`);
+		else if (p.evidence?.words) lines.push(`- **Why:** ${p.evidence.words}.`);
 		else lines.push(`- **Why:** ${p.evidence?.runs ?? "–"} failing practice runs on ${p.evidence?.tasks ?? "–"} tasks (${(p.clusters ?? []).join(", ") || "measured gap"}).`);
 		lines.push(`- **Expected:** ${p.expect}.`);
 		if (d) lines.push(`- **Dev set** (practice, ${d.tasks} tasks, relay@pkg minus relay@${champion}): ${signed(d.difference)} points, interval ${f(d.low)} to ${f(d.high)}; cost ratio ${f(d.costRatio, 3)}, time ratio ${f(d.timeRatio, 3)}; safety flags ${d.safetyFlags}.`);
@@ -157,11 +159,12 @@ export function prBody({ cycle, release, champion, chosen, results, arch, held, 
 	lines.push("## Roll back the release", "");
 	lines.push(`Revert this pull request. relay@${champion} stays the release people have; relay.arch returns to version ${arch?.version ?? "–"} (hash ${String(arch?.hash ?? "–").slice(0, 12)}) once \`npm run arch\` runs on the reverted tree. A release already out is withdrawn with the switch-off list (D-80), and its successor gated again.`, "");
 	lines.push("## How it is judged", "");
+	if (chosen.some(needsMetaHarness)) lines.push("This release changes the router, which acts only while the meta-harness is on (RELAY_META=1), so the pre-screen ran, and the gate runs, every Relay arm with it on, the champion's and the candidate's alike (`--relay-meta`, GATE.md amendment 5).", "");
 	lines.push(`Build the release from \`release.patch\` at v${champion} (\`npm run arch\`, then the release scripts), then run the gate on the exam, a founder's yes first (RUNBOOK.md, "The gate"):`, "");
 	lines.push("```");
 	lines.push(`node runner/gate.mjs --run --test gate-${release} --champion ${champion} --candidate ${release} \\`);
 	lines.push(`  --tier exam --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate --plan-tasks <n> \\`);
-	lines.push(`  --anchors ../relay-exam/anchors/<version>.json${chosen.length >= 2 ? " --combined lanes.json" : ""} --model ${model} --reps 1 \\`);
+	lines.push(`  --anchors ../relay-exam/anchors/<version>.json${chosen.length >= 2 ? " --combined lanes.json" : ""}${chosen.some(needsMetaHarness) ? " --relay-meta" : ""} --model ${model} --reps 1 \\`);
 	lines.push("  --cap-usd <usd> --stage-cap-usd <usd> --e2b-cap-usd <usd>");
 	lines.push("```", "");
 	lines.push("## The ledger entry it would make", "");
@@ -189,7 +192,7 @@ export function packageRelease({ cycle, cycleDir, results, proposals, arch, arch
 	const held = [...notChosen, ...composed.held];
 	const body = prBody({ cycle, release, champion, chosen, results, arch, held, preview, model });
 	const manifest = chosen.length >= 2 ? { release, lanes } : null;
-	const out = { dir: join(cycleDir, "release"), lanes, risk: maxRisk(chosen.map((p) => p.risk)), held, body, patch: composed.patch, manifest, preview, files: [] };
+	const out = { dir: join(cycleDir, "release"), lanes, risk: maxRisk(chosen.map((p) => p.risk)), held, body, patch: composed.patch, manifest, preview, relayMeta: chosen.some(needsMetaHarness), files: [] };
 	if (write) {
 		mkdirSync(out.dir, { recursive: true });
 		const put = (name, text) => {
@@ -205,4 +208,4 @@ export function packageRelease({ cycle, cycleDir, results, proposals, arch, arch
 }
 
 /** The value a change sets, for a reader: used by the report. */
-export const describeChange = (p) => (p.change?.kind === "arch" ? `${p.change.path}: ${fmt(p.change.from)} → ${fmt(p.change.to)}` : p.change?.kind === "skill" ? `new skill ${p.change.skill} (${p.change.file})` : `${p.change?.file} ${p.change?.symbol}`);
+export const describeChange = (p) => (p.change?.kind === "arch" ? (p.change.summary ? `${p.change.path}, ${p.change.summary}` : `${p.change.path}: ${fmt(p.change.from)} → ${fmt(p.change.to)}`) : p.change?.kind === "skill" ? `new skill ${p.change.skill} (${p.change.file})` : `${p.change?.file} ${p.change?.symbol}`);

@@ -4,6 +4,10 @@
 //   step at a time, inside fixed bounds, and only when a cluster or a measured gap calls for it. A value Relay reads
 //   from relay.arch ("Set here", D-91) is changed in relay.arch.json; a value the generator reads from code is changed
 //   in that code too when it is a plain constant, and otherwise the proposal names the code that holds it.
+// - The router's starting table (routing lane, relay-harness D-101): from the benchmark's arm outcomes
+//   (scripts/arm-outcomes.mjs, the file `relay router learn --import` reads), a set of arms that gave more proven
+//   results per dollar than a row's own arms, on the tasks that row starts, becomes that row's proposal, when both
+//   have enough runs and the new set was not proven more than the gate's margin less often.
 // - Writer lanes (prompts and skills, tools) have a model write the change to one prompt's text: paid, so they wait
 //   for a cap. The loop applies what it writes to the champion's source itself, keeps only a change inside that
 //   prompt's declaration, and refuses one that names anything from a practice task (it would learn the task, not the
@@ -21,6 +25,7 @@ import { dirname, join } from "node:path";
 import { leftovers } from "../teaching/graduate.mjs";
 import { changedPaths, getPath, newFileDiff, serializeLike, setPath, unifiedDiff, under } from "./diff.mjs";
 import { codeHome, LANE_ORDER, LANES, proposalProblems, SET_HERE, skillsRoot, symbolSpan } from "./lanes.mjs";
+import { STRATEGIES as ARM_STRATEGIES, HARNESS_IDS, runKey } from "../scripts/arm-outcomes.mjs";
 import { WRITER_MAX_TOKENS, worstCostUsd } from "./writer.mjs";
 
 /**
@@ -249,6 +254,155 @@ export function ruleCandidates({ cycle, analysis, arch, archText, settings, sour
 				});
 			}
 		}
+	}
+	return { candidates, notes };
+}
+
+// ── The router's starting table, from benchmark evidence ──
+
+/** A set of arms in the harness's fixed order (table.ts sortArms): by harness, then strategy. */
+export const sortArms = (arms) =>
+	[...arms].sort((a, b) => HARNESS_IDS.indexOf(a.harness) - HARNESS_IDS.indexOf(b.harness) || ARM_STRATEGIES.indexOf(a.strategy) - ARM_STRATEGIES.indexOf(b.strategy));
+/** A set of arms as one key, as the harness keys them (table.ts armSetKey): "relay:direct,claude-code:direct". */
+export const armSetKey = (arms) => sortArms(arms).map((a) => `${a.harness}:${a.strategy}`).join(",");
+
+/** The first row of a starting table that a task's kind and difficulty match, as the harness reads it (matchingRow). */
+export const matchingRow = (table, { kind, difficulty }) => (table ?? []).find((row) => row.difficulty.includes(difficulty) && (row.kinds === undefined || row.kinds.includes(kind)));
+
+const HARNESS_WORDS = { relay: "Relay", "claude-code": "Claude Code", codex: "Codex" };
+const DOING = { direct: "working straight at it", "reproduce-first": "reproducing the problem first", "plan-first": "planning first" };
+const DOES = { direct: "works straight at it", "reproduce-first": "reproduces the problem first", "plan-first": "plans first" };
+const COUNT_WORDS = ["no", "one", "two", "three", "four", "five"];
+const list = (items) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+/** A set of arms in the harness's own words (table.ts setWords): "one Relay attempt", "two attempts at once, Relay and Claude Code". */
+export function setWords(arms) {
+	const sorted = sortArms(arms);
+	const first = sorted[0];
+	if (!first) return "no attempt";
+	if (sorted.length === 1) return `one ${HARNESS_WORDS[first.harness]} attempt${first.strategy === "direct" ? "" : ` that ${DOES[first.strategy]}`}`;
+	const count = COUNT_WORDS[sorted.length] ?? String(sorted.length);
+	if (new Set(sorted.map((a) => a.harness)).size === 1) return `${count} ${HARNESS_WORDS[first.harness]} attempts at once, ${list(sorted.map((a) => `one ${DOING[a.strategy]}`))}`;
+	return `${count} attempts at once, ${list(sorted.map((a) => (a.strategy === "direct" ? HARNESS_WORDS[a.harness] : `${HARNESS_WORDS[a.harness]} ${DOING[a.strategy]}`)))}`;
+}
+
+/**
+ * The benchmark's runs per row of a starting table: each run (the arm outcomes with one projectKey, taskId and at)
+ * counted on the first row its kind and difficulty match, per set of arms. Returns Map<row id, Map<set key,
+ * { key, arms, runs, proven, costUsd, tasks }>>: `proven` the runs where an arm was verified and picked, `costUsd` what
+ * every arm of every run spent.
+ */
+export function routerEvidence({ outcomes, table }) {
+	const byRun = new Map();
+	for (const o of outcomes) {
+		if (!byRun.has(runKey(o))) byRun.set(runKey(o), []);
+		byRun.get(runKey(o)).push(o);
+	}
+	const rows = new Map();
+	for (const lines of byRun.values()) {
+		const row = matchingRow(table, lines[0]);
+		if (!row) continue;
+		const arms = sortArms(lines.map((l) => ({ harness: l.arm.harness, strategy: l.arm.strategy })));
+		const key = armSetKey(arms);
+		if (!rows.has(row.id)) rows.set(row.id, new Map());
+		const sets = rows.get(row.id);
+		const set = sets.get(key) ?? { key, arms, runs: 0, proven: 0, costUsd: 0, tasks: new Set() };
+		set.runs++;
+		if (lines.some((l) => l.verified && l.picked)) set.proven++;
+		set.costUsd += lines.reduce((sum, l) => sum + l.costUsd, 0);
+		set.tasks.add(`${lines[0].projectKey}|${lines[0].taskId.replace(/ r\d+ [\w+-]+$/, "")}`);
+		sets.set(key, set);
+	}
+	return rows;
+}
+
+/** Proven results per dollar of a set's runs; a set that spent nothing is not compared. */
+const perDollar = (set) => (set.costUsd > 0 ? set.proven / set.costUsd : null);
+const share = (set) => set.proven / set.runs;
+const money3 = (x) => `$${x.toFixed(3)}`;
+const sideOf = (set) => ({ key: set.key, runs: set.runs, proven: set.proven, costUsd: set.costUsd, meanUsd: set.costUsd / set.runs, provenPerDollar: perDollar(set) });
+
+/**
+ * A new row's arms: the set's harnesses and strategies, and for an arm of another harness the arm that takes its place
+ * when that harness cannot be used here (the row's own, else a Relay arm that goes about it another way: reproducing
+ * the problem first on bug fixes and test tasks, planning first otherwise), so a task still gets attempts that differ.
+ */
+export function rowArms(arms, row) {
+	const relayStrategies = new Set(arms.filter((a) => a.harness === "relay").map((a) => a.strategy));
+	const bugs = Array.isArray(row.kinds) && row.kinds.every((k) => k === "bug" || k === "test");
+	const order = bugs ? ["reproduce-first", "plan-first", "direct"] : ["plan-first", "reproduce-first", "direct"];
+	return sortArms(arms).map((a) => {
+		if (a.harness === "relay") return { harness: a.harness, strategy: a.strategy };
+		const own = row.arms.find((r) => r.harness === a.harness && r.otherwise)?.otherwise;
+		const otherwise = own ?? { harness: "relay", strategy: order.find((st) => !relayStrategies.has(st)) ?? "direct" };
+		return { harness: a.harness, strategy: a.strategy, otherwise };
+	});
+}
+
+/**
+ * The router lane's candidates (routing lane): for each row of relay.arch's router table, from the benchmark's arm
+ * outcomes, the set of arms with the most proven results per dollar on the tasks that row starts, when it gave more
+ * than the row's own arms. Both need `minSamples` runs; a set proven more than `maxDropPoints` points less often than
+ * the row's own is not proposed (the gate's non-inferiority margin, GATE.md). Returns { candidates, notes }.
+ */
+export function routerCandidates({ cycle, outcomes, arch, archText, settings, sources = () => null, file = "the arm outcomes" }) {
+	const candidates = [];
+	const notes = [];
+	if (settings.lanes?.routing?.enabled === false || (settings.lanes?.routing?.proposals ?? 0) < 1) return { candidates, notes };
+	const table = arch?.router?.table;
+	if (!Array.isArray(table)) return { candidates, notes: ["router: this relay.arch has no router table (relay-harness D-101)"] };
+	const minSamples = settings.routing?.minSamples ?? 5;
+	const maxDropPoints = settings.routing?.maxDropPoints ?? 5;
+	const evidence = routerEvidence({ outcomes, table });
+	for (const [index, row] of table.entries()) {
+		const sets = evidence.get(row.id);
+		const ownKey = armSetKey(row.arms);
+		const own = sets?.get(ownKey);
+		if (!sets) {
+			notes.push(`router ${row.id}: ${file} hold no run of the tasks this row starts`);
+			continue;
+		}
+		if (!own || own.runs < minSamples) {
+			notes.push(`router ${row.id}: its own arms (${setWords(row.arms)}) have ${own?.runs ?? 0} benchmark runs, fewer than ${minSamples}, so nothing is compared`);
+			continue;
+		}
+		const ownPer = perDollar(own);
+		const dropOf = (set) => 100 * (share(own) - share(set));
+		// The sets with enough runs that gave more proven results per dollar than the row's own, the most first.
+		const more = [...sets.values()].filter((set) => set.key !== ownKey && set.runs >= minSamples && perDollar(set) !== null && ownPer !== null && perDollar(set) > ownPer);
+		more.sort((a, b) => perDollar(b) - perDollar(a) || a.costUsd / a.runs - b.costUsd / b.runs || a.arms.length - b.arms.length || a.key.localeCompare(b.key));
+		if (!more.length) {
+			notes.push(`router ${row.id}: no set of arms gave more proven results per dollar than its own (${setWords(row.arms)}, ${own.proven} of ${own.runs})`);
+			continue;
+		}
+		const best = more.find((set) => dropOf(set) <= maxDropPoints);
+		if (!best) {
+			const top = more[0];
+			notes.push(`router ${row.id}: ${setWords(top.arms)} gave more proven results per dollar, but ${dropOf(top).toFixed(1)} points less often than its own arms (${top.proven} of ${top.runs} against ${own.proven} of ${own.runs}), past the gate's ${maxDropPoints}-point margin`);
+			continue;
+		}
+		const dropPoints = dropOf(best);
+		const arms = rowArms(best.arms, row);
+		const words = `In Relay's benchmark runs (week ${cycle}), on tasks this row starts, ${setWords(best.arms)} gave a proven result ${best.proven} of ${best.runs} times for about ${money3(best.costUsd / best.runs)} a task, and ${setWords(row.arms)} ${own.proven} of ${own.runs} times for about ${money3(own.costUsd / own.runs)}.`;
+		const value = table.map((r, i) => (i === index ? { ...r, arms, words } : r));
+		const ev = { row: row.id, own: sideOf(own), proposed: sideOf(best), dropPoints, minSamples, runs: own.runs + best.runs, tasks: new Set([...own.tasks, ...best.tasks]).size };
+		ev.words = `the benchmark's arm outcomes on the tasks this row starts: ${setWords(best.arms)} gave a proven result ${best.proven} of ${best.runs} times for ${money3(best.costUsd)} in all, ${perDollar(best).toFixed(1)} a dollar; ${setWords(row.arms)} ${own.proven} of ${own.runs} times for ${money3(own.costUsd)}, ${ownPer.toFixed(1)} a dollar (${ev.tasks} tasks)`;
+		const p = archProposal({
+			cycle,
+			lane: "routing",
+			rule: `router-${row.id}`,
+			path: "router.table",
+			value,
+			arch,
+			archText,
+			sources,
+			evidence: ev,
+			words: `start ${setWords(best.arms)} on the router's ${row.id} row: in the benchmark runs they gave ${perDollar(best).toFixed(1)} proven results a dollar (${best.proven} of ${best.runs}, about ${money3(best.costUsd / best.runs)} a task), against ${ownPer.toFixed(1)} (${own.proven} of ${own.runs}, about ${money3(own.costUsd / own.runs)}) with ${setWords(row.arms)} (D-101)`,
+			expect: `with the meta-harness on, the ${row.id} row's tasks give a proven result as often for less, or more often for the same`,
+		});
+		p.change.summary = `the ${row.id} row from ${setWords(row.arms)} to ${setWords(best.arms)}`;
+		p.change.row = { id: row.id, from: row.arms, to: arms };
+		p.title = `${LANES.routing.label}: router.table, ${p.change.summary}`;
+		candidates.push({ ...p, weight: ev.runs });
 	}
 	return { candidates, notes };
 }

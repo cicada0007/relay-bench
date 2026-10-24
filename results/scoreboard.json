@@ -1,9 +1,9 @@
 {
   "scoreboard": 1,
   "week": "2026-W43",
-  "generatedAt": "2026-10-24T01:49:34.518Z",
+  "generatedAt": "2026-10-24T08:57:49.533Z",
   "repository": "https://github.com/cicada0007/relay-bench",
-  "commit": "36f67b5658592744fcd9bcbc626eaed16ffb0c93",
+  "commit": "15b920385f08d752921734d9a5d82434f42f49ee",
   "preregistration": "https://github.com/cicada0007/relay-bench/blob/main/PREREGISTRATION.md",
   "statistics": {
     "unit": "The task. An entry's score on a task is its mean over that task's trials (the meta-harness: over that task's groups of attempts).",
@@ -16,6 +16,7 @@
     "score": "Solved (Terminal-Bench), resolved (SWE-bench) or requirements met (the exam), percent.",
     "allTrialsSolved": "The share of tasks where every trial succeeded, percent.",
     "costUsd": "Metered model spend of every trial counted, in dollars.",
+    "sandboxUsd": "Sandbox time of every trial counted, apart from the model spend, at E2B's published price per second for 2 vCPU and 4 GiB (more for a task that asks for a larger sandbox), in dollars; for the meta-harness, every attempt of its groups. A trial that did not record its sandbox time is estimated from its start and end (sandboxEstimatedTrials).",
     "costPerSolvedUsd": "Metered cost divided by the trials (or, for the meta-harness, the groups) that succeeded.",
     "medianMinutes": "Median wall time of a trial; for the meta-harness, of its slowest attempt in a group plus the picker's measured time."
   },
@@ -73,6 +74,8 @@
               "high": 80.45977011494253,
               "allTrialsSolved": 65.51724137931035,
               "costUsd": 4.000450165000001,
+              "sandboxUsd": 4.233015956,
+              "sandboxEstimatedTrials": 174,
               "costPerSolvedUsd": 0.032003601320000005,
               "medianMinutes": 1.5670666666666666,
               "unmeteredTrials": 0,
@@ -89,6 +92,8 @@
               "high": 89.65517241379311,
               "allTrialsSolved": 75.86206896551724,
               "costUsd": 6.898719185000001,
+              "sandboxUsd": 4.008167864000001,
+              "sandboxEstimatedTrials": 174,
               "costPerSolvedUsd": 0.04757737368965518,
               "medianMinutes": 1.4331166666666666,
               "unmeteredTrials": 2,
@@ -124,7 +129,9 @@
               "splitGroups": 42,
               "pickedTopGraded": 36,
               "unanswered": 0,
-              "bestPossible": 89.65517241379311
+              "bestPossible": 89.65517241379311,
+              "sandboxUsd": 8.241183820000005,
+              "sandboxEstimatedTrials": 348
             }
           ],
           "differences": [

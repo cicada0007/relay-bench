@@ -134,7 +134,9 @@ yet run**: tested on made-up data only.
   per cycle. Of the exam it sees nothing; a release reaches the exam only through the gate.
 - **What it proposes.** One change per lane: config, routing, memory, tools, prompts and skills, architecture (a diff
   to the harness's `relay.arch.json`, D-91, and the code that holds a value when relay.arch reads it from code), and
-  exam proposals. Runtime is documented only. A writer lane's change must stay inside the one prompt it edits, and is
+  exam proposals. The routing lane includes the meta-harness's router (`router.table`, `router.verifierShare`,
+  `router.minArmUsd`, D-101), proposed from the benchmark's arm outcomes (`results/arm-outcomes.jsonl`, public tasks
+  only) when the cycle is given them. Runtime is documented only. A writer lane's change must stay inside the one prompt it edits, and is
   refused when it names anything from the practice failures it was shown, since it would learn the task, not the skill.
 - **Taught skills** (TEACHING.md): a skill candidate graduated from lessons many machines chose to share
   (`teaching/graduate.mjs`, at least 5 machines and 25 passing uses) is a prompts-and-skills proposal that adds one new

@@ -42,6 +42,8 @@ const { values: args } = parseArgs({
 		"fault-for-sec": { type: "string", default: "600" },
 		// Pilot and dev runs only: install this local Relay package over the pinned one, to try a fix before it ships.
 		"relay-package": { type: "string" },
+		// Relay with its meta-harness on (RELAY_META=1): for runs that judge a change to the router (GATE.md, amendment 5).
+		"relay-meta": { type: "boolean", default: false },
 	},
 });
 for (const name of ["task", "tool", "model", "cap-usd"]) {
@@ -107,6 +109,7 @@ const record = {
 	pins: PINS,
 	template: TEMPLATE_NAME,
 	...(args.fault ? { fault: { kind: args.fault, afterSec: Number(args["fault-after-sec"]), forSec: Number(args["fault-for-sec"]) } } : {}),
+	...(args["relay-meta"] && arm === ARMS.relay ? { relayMeta: true } : {}),
 	startedAt: new Date().toISOString(),
 };
 
@@ -258,7 +261,7 @@ try {
 		{
 			cwd: WORK,
 			timeoutMs: task.timeLimitMinutes * 60_000,
-			envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model }), ...keyEnv },
+			envs: { ...BASE_ENV, ...TRUST_ENV, ...arm.env({ model: args.model, meta: args["relay-meta"] }), ...keyEnv },
 		},
 		meterLog,
 	);

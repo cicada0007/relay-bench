@@ -31,9 +31,9 @@ export const LANES = Object.freeze({
 	routing: {
 		label: "routing",
 		how: "rules",
-		words: "which tier and model works a task: the tiers' model lists, the suitability table, the Decider's share",
-		decisions: ["D-46", "D-60", "D-61"],
-		arch: ["routing.tiers", "routing.suitability", "routing.deciderShare", "routing.refusalHoldHours"],
+		words: "which tier and model works a task: the tiers' model lists, the suitability table, the Decider's share; and with the meta-harness, which attempts a task starts with (the router's starting table), the share kept for checking them, and the least an attempt is given",
+		decisions: ["D-46", "D-60", "D-61", "D-101"],
+		arch: ["routing.tiers", "routing.suitability", "routing.deciderShare", "routing.refusalHoldHours", "router.table", "router.verifierShare", "router.minArmUsd"],
 	},
 	memory: {
 		label: "memory",
@@ -88,6 +88,9 @@ export const SET_HERE = Object.freeze([
 	"routing.suitability",
 	"routing.deciderShare",
 	"routing.refusalHoldHours",
+	"router.table",
+	"router.verifierShare",
+	"router.minArmUsd",
 	"subAgents.maxDepth",
 	"subAgents.childTier",
 	"queue.requestCheck",
@@ -173,6 +176,16 @@ export function invariantHits({ arch = [], files = [] }) {
 	}
 	return hits;
 }
+
+/**
+ * The relay.arch values that act only while the meta-harness is on (RELAY_META, relay-harness D-98 to D-103): the
+ * router's. A change to one shows in a run only when the run turns the meta-harness on, so the runs that judge it (the
+ * pre-screen and the gate) turn it on for both arms (GATE.md, amendment 5).
+ */
+export const META_PATHS = Object.freeze(["router"]);
+
+/** Whether a proposal, or a release's lanes, change a value that acts only with the meta-harness on. */
+export const needsMetaHarness = (proposal) => (proposal?.touches?.arch ?? []).some((p) => META_PATHS.some((m) => under(p, m)));
 
 /** A code home as file and symbol: "packages/supervisor/src/store.ts MAX_ATTEMPTS" -> { file, symbol }. */
 export const codeHome = (path) => {

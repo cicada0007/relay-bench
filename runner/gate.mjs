@@ -17,6 +17,9 @@
 //   --anchors <file>   the anchor set scored with every release (runner/anchors.mjs); required for a counted exam gate.
 //   --combined <file>  a combined candidate: { "release": "<candidate>", "lanes": [{ "lane": "...", "change": "..." }] },
 //                      several lane changes judged as one release, once.
+//   --relay-meta       every Relay run of the gate, champion and candidate alike, with the meta-harness on
+//                      (RELAY_META=1; GATE.md, amendment 5), for a release that changes the router. Fixed at the first
+//                      look.
 //   --candidate-package <tgz>
 //                      the candidate is a local build (GATE.md, amendment 4): --candidate 0.6.122-loop.2026w44, the
 //                      package's version, and every candidate run installs this tarball. Its SHA-256 is fixed at the
@@ -70,6 +73,7 @@ const { values: args } = parseArgs({
 		anchors: { type: "string" },
 		combined: { type: "string" },
 		"candidate-package": { type: "string" },
+		"relay-meta": { type: "boolean", default: false },
 	},
 });
 for (const name of ["test", "champion", "candidate"]) if (!args[name]) throw new Error(`--${name} is required`);
@@ -184,6 +188,15 @@ if (isLocalBuild(args.candidate)) {
 	else if (args.run) throw new Error("--run installs the local build in every candidate run: pass --candidate-package");
 }
 
+// The meta-harness for both arms (amendment 5): on or off for the whole gate, fixed at its first run.
+if (args.run) {
+	const meta = Boolean(args["relay-meta"]);
+	if (state.relayMeta !== undefined && state.relayMeta !== meta) {
+		throw new Error(`this gate runs Relay with the meta-harness ${state.relayMeta ? "on (--relay-meta)" : "off"}; it never changes mid-gate`);
+	}
+	state.relayMeta = meta;
+}
+
 const saveState = () => {
 	mkdirSync(out, { recursive: true });
 	writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
@@ -242,6 +255,7 @@ if (args.run) {
 			"--concurrency", args.concurrency,
 			"--out", out,
 			...(args["candidate-package"] ? ["--relay-package", resolve(args["candidate-package"])] : []),
+			...(state.relayMeta ? ["--relay-meta"] : []),
 			...(args["dry-run"] ? ["--dry-run"] : []),
 		],
 		{ stdio: "inherit" },

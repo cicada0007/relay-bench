@@ -9,6 +9,10 @@ autopilot never merges, releases, publishes or signs anything on its own.
 node loop/autopilot.mjs --spend-cap 20 --signed-by <your name> --keychain relay-openai
 ```
 
+Add `--arm-outcomes results/arm-outcomes.jsonl` (off unless given) to let the routing lane propose a change to the
+meta-harness's router from the benchmark's arm outcomes (RUNBOOK.md, "The router's starting table"); a release that
+changes the router is pre-screened and gated with the meta-harness on for both arms (GATE.md, amendment 5).
+
 Each run prints one line per step (ran, skipped, stopped or failed, and why) and writes a plain-words report to
 `runs/loop/<week>/autopilot/report.md`. The report says what Relay learned about itself, what it proposed, what it
 tested, what it cost, and whether a pull request is waiting.
@@ -113,7 +117,8 @@ every Monday at 06:00 and logs to `runs/autopilot/weekly.log`. It runs
 `/bin/zsh -c 'exec "$0" "$@"' <node> loop/autopilot.mjs --spend-cap 20 --signed-by <name> --keychain relay-openai`
 from this folder. zsh reads `~/.zshenv`, where `E2B_API_KEY` lives, and the autopilot reads the model key from the
 Keychain when it runs. The plist holds no key: the command refuses to write one that looks like it carries a key.
-`--model`, `--harness`, `--exam`, `--records` and `--tasks-dir` given with `--install-schedule` are passed on. The
+`--model`, `--harness`, `--exam`, `--records`, `--tasks-dir` and `--arm-outcomes` given with `--install-schedule` are
+passed on. The
 first Keychain read may ask once to allow `security`; choose Always Allow.
 
 Nothing is scheduled until you run that command. `node loop/autopilot.mjs --remove-schedule` takes it away. On Linux,

@@ -17,6 +17,7 @@ import { loadRecords } from "../runner/analyze.mjs";
 import { budgetProblems, exposurePathFor, loadBudget, readExposures } from "../runner/exposure.mjs";
 import { gate, RULES as GATE_RULES } from "../runner/gate-analyze.mjs";
 import { readTasks } from "../runner/stage-tasks.mjs";
+import { needsMetaHarness } from "./lanes.mjs";
 
 /** E2B, 2 vCPU + 4 GiB, as runner/run-stage.mjs prices it. */
 export const E2B_USD_PER_SECOND = 0.000046;
@@ -138,13 +139,15 @@ export async function prescreen({ proposals, cycleDir, settings, money, champion
 
 		// The dev set.
 		const devTest = `dev-loop-${proposal.id}`;
+		// A change that acts only with the meta-harness on (the router's) is measured with it on, for both arms.
+		const meta = needsMetaHarness(proposal) ? ["--relay-meta"] : [];
 		const devCap = Math.min(money.laneLeft(lane), money.capLeft(), devTasks.length * 2 * p.devReps * one);
 		log(`pre-screen ${proposal.id}: dev set, ${devTasks.length} tasks, at most $${devCap.toFixed(2)}`);
 		const devRun = exec("runner/run-stage.mjs", [
 			"--test", devTest, "--model", model, "--tools", `${champ},relay@pkg`, "--relay-package", pkg,
 			"--tasks", devTasks.join(","), "--tasks-dir", practiceTasksDir, "--reps", String(p.devReps),
 			"--cap-usd", String(one), "--stage-cap-usd", devCap.toFixed(4), "--e2b-cap-usd", String(p.e2bCapUsd),
-			"--concurrency", String(p.concurrency), "--out", devOut,
+			"--concurrency", String(p.concurrency), "--out", devOut, ...meta,
 		]);
 		const devRecords = existsSync(join(devOut, "records.jsonl")) ? loadRecords(devOut, devTest) : [];
 		const devSpent = sum(devRecords.map((r) => r.usage?.costUsd ?? 0));
@@ -186,7 +189,7 @@ export async function prescreen({ proposals, cycleDir, settings, money, champion
 					"--test", selTest, "--model", model, "--tools", `${champ},relay@pkg`, "--relay-package", pkg,
 					"--tasks", "tier:check", "--tasks-dir", examTasks, "--reps", String(p.selectionReps),
 					"--cap-usd", String(one), "--stage-cap-usd", selCap.toFixed(4), "--e2b-cap-usd", String(p.e2bCapUsd),
-					"--concurrency", String(p.concurrency), "--out", selOut,
+					"--concurrency", String(p.concurrency), "--out", selOut, ...meta,
 				]);
 				// The check tier's runs are never read here: their spend is what run-stage printed, or all it was allowed.
 				const selSpent = stageSpent(selRun.stdout) ?? selCap;
