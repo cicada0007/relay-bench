@@ -491,3 +491,122 @@ node scripts/export-results.mjs --bar --out ../relay-exam/runs/bar --to results/
 It has no result words, no task names and no per-task scores. A stage not run yet is marked `"not run yet"`. A stage
 cut short is marked `"in progress"`, with a count of the runs it did not make. Then run the monthly hand check on these
 runs ("Growing the exam", step 6).
+
+## The scoreboard, every week
+
+**Not yet run on SWE-bench or the exam.** The SWE-bench runners, the Codex agent and the picker over any arms are built
+and tested on made-up records only; no SWE-bench trial and no new picker call has been made. The one live number on the
+scoreboard today is Terminal-Bench 2.1 from round 1 (test F), with the meta-harness scored from the picker answers round
+1's exam already gave, at no new cost.
+
+`results/scoreboard.json` (`scripts/scoreboard.mjs`) says, for each benchmark and model, each tool's score with its 95%
+interval, cost, cost per solved task and median time, and the same for **Relay meta-harness**: the picker
+(`meta/pick-groups.mjs`) choosing among the attempts every tool made on the same task, blind to grades and to which tool
+made which attempt. Its cost is every attempt plus the picker. Then, for each run, the meta-harness minus each tool and
+Relay minus each other tool, in points with their intervals. Numbers only: no result words, no colours, and no exam task
+names.
+
+### The benchmarks
+
+Found in Harbor's registry on 24 Oct 2026 with Harbor 0.24.0 (`harbor version list <org/name>`, free):
+
+| Benchmark | Dataset, pinned by digest | Tasks | Task list |
+| --- | --- | ---: | --- |
+| Terminal-Bench 2.1 | `terminal-bench/terminal-bench-2-1@sha256:7d7bdc1c…` (revision 6) | 89 | `runner/tb21-tasks.json` |
+| SWE-bench Verified | `swe-bench/swe-bench-verified@sha256:b934b0cc…` (revision 2) | 500 | `runner/swebench-verified-tasks.json` |
+| SWE-bench Pro | `scale-ai/swe-bench-pro@sha256:88411d32…` (revision 2) | 731 | `runner/swebench-pro-tasks.json` |
+
+SWE-bench Verified is the `swe-bench` organisation's own package and SWE-bench Pro is `scale-ai`'s, the benchmark's
+authors; the registry also holds third-party copies (`nanoswe/swe-bench-verified`, `cais/swebenchpro`), which are not
+used. **Terminal-Bench 4.0 is not in the registry as an official release:** the `terminal-bench` organisation has
+`terminal-bench`, `terminal-bench-2` and `terminal-bench-2-1` only, and the 4.0 copies belong to a personal account
+(`ryanmarten/terminal-bench-4-no-prebuild`, tagged 4.0.0, and `ryanmarten/tb4-preview`). Rewrite a task list after a
+new pin with `~/.local/share/uv/tools/harbor/bin/python -I harbor-agents/dataset_tasks.py <org/name> sha256:<digest>`.
+
+### The tools
+
+`harbor-agents/relay_bench_agents.py` has three Harbor agents, all on the round's meter and the same Node:
+`Relay` (Relay 0.6.118 unless `--relay-version` says otherwise, on an Anthropic or an OpenAI model),
+`BenchClaudeCode` (Harbor's own Claude Code agent, 2.1.300) and `BenchCodex` (Harbor's own Codex agent, 0.163.0, the
+version `sandbox/template.mjs` pins; Harbor 0.24.0 has it built in). Claude Code runs Anthropic models and Codex OpenAI
+models, so each benchmark has two runs: Relay and Claude Code on Claude Haiku 5.5, and Relay and Codex on GPT-6 Luna,
+which has Haiku 5.5's list prices. Use the Relay release of the day for `--relay-version` (the bar uses 0.6.121).
+
+### Before the first run
+
+1. **Harbor 0.24.0:** `uv tool install 'harbor[e2b]==0.24.0'`.
+2. **Keys in the environment, never on the command line:** `RELAY_BENCH_ANTHROPIC_KEY`, `RELAY_BENCH_OPENAI_KEY` and
+   `E2B_API_KEY`. Each trial gets only its model's key.
+3. **Smoke trials** (dev, about $1 in all), one task each. For Codex, check that the meter saw its traffic before any
+   counted trial: `meter.jsonl` must have lines with `"transport":"websocket"` and a `costUsd`.
+
+   ```
+   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench --tasks astropy__astropy-12907 --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --out runs/dev
+   node runner/harbor-bench.mjs --bench swebench-verified --test dev-swebench-openai --tasks astropy__astropy-12907 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --cap-usd 0.5 --stage-cap-usd 2 --out runs/dev
+   rg -c '"transport":"websocket"' runs/dev/dev-swebench-openai/jobs/*/*/agent/meter.jsonl
+   ```
+
+4. **A pilot on 10 tasks** of each benchmark, to measure the real cost per trial (add `--sample 10 --test pilot-<bench>`
+   to the commands below, with a stage cap of $15). The caps below are estimates for the founders to confirm; the pilot
+   replaces them.
+
+### The runs
+
+Add `--dry-run` to any command to see the plan and the most it could cost, free. Each stage resumes when run again and
+stops at its own cap; records land in `runs/scoreboard/<bench>-<model>/`. Only model spend is capped here; E2B bills
+sandbox time apart, as in test F.
+
+| Run | Command | Trials | Cap |
+| --- | --- | ---: | ---: |
+| SWE-bench Verified, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 |
+| SWE-bench Verified, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-verified --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 150 --concurrency 4 --out runs/scoreboard` | 1,000 | $150 |
+| SWE-bench Pro, Haiku 5.5 | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,claude-code --model claude-haiku-5-5 --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 |
+| SWE-bench Pro, GPT-6 Luna | `node runner/harbor-bench.mjs --bench swebench-pro --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 1 --cap-usd 1 --stage-cap-usd 220 --concurrency 4 --out runs/scoreboard` | 1,462 | $220 |
+| Terminal-Bench 2.1, GPT-6 Luna | `node runner/harbor-bench.mjs --bench terminal-bench-2-1 --tools relay,codex --model gpt-6-luna --relay-version 0.6.121 --trials 2 --cap-usd 1 --stage-cap-usd 45 --concurrency 4 --out runs/scoreboard` | 356 | $45 |
+
+Test F's mean cost per trial on Haiku 5.5 was $0.02 (Relay) and $0.04 (Claude Code); a SWE-bench trial reads a real
+repository and is estimated at about $0.10. A run cut short (`--sample n` for a fixed draw of n tasks) is marked on the scoreboard with the trials it
+did not make.
+
+### The meta-harness's picks
+
+After a run, the picker chooses on every group of attempts (one per tool, same task and trial number). Its calls are
+OpenAI calls with their own cap, after a founder's yes; answers are kept beside the run and reused, so a second command
+costs nothing more:
+
+```
+node meta/pick-groups.mjs --records runs/scoreboard/swebench-verified-claude-haiku-5-5/records.jsonl --model claude-haiku-5-5 --dry-run
+node meta/pick-groups.mjs --records runs/scoreboard/swebench-verified-claude-haiku-5-5/records.jsonl --model claude-haiku-5-5 --keychain relay-openai --openai-cap-usd 20
+```
+
+The dry run prints the groups and the most the calls could cost. `--ask split` asks only about groups the grader split
+(where the choice changes the score); the scoreboard then estimates the picker's cost on the other groups from the asked
+calls' mean and shows it apart. On the exam, give the tasks folder; each call is counted against the leak budget first:
+
+```
+node meta/pick-groups.mjs --records ../relay-exam/runs/bar/records.jsonl --test bar-1-haiku --model claude-haiku-5-5 --tasks-dir ../relay-exam/tasks --dry-run
+```
+
+Round 1's Terminal-Bench pairs need no new call: `--records runs/round-1/F/records.jsonl --model claude-haiku-5-5
+--arms claude-code,relay --ask split --reuse runs/meta/pick-exam-gpt-6.1-sol-medium.jsonl` reuses the exam's answers.
+
+### The scoreboard
+
+```
+node scripts/scoreboard.mjs --dry-run      # prints every run's entries; writes nothing
+node scripts/scoreboard.mjs                # writes results/scoreboard.json for this ISO week
+node scripts/scoreboard.mjs --install-schedule weekly    # every Monday at 07:00 (macOS launchd; prints a crontab line)
+```
+
+It reads `runs/round-1/F/`, every stage under `runs/scoreboard/`, and the bar's stages in `../relay-exam/runs/bar/`. It
+never runs a trial or asks the picker, so the weekly job costs nothing; the week's numbers change when a person runs a
+stage or the picker with a cap. Each week's headline numbers are added to the file's `history`, and a second build in the
+same week replaces that week's lines. A group the picker has not answered yet is counted (`groupsNotDecided`), never
+guessed, and its run stays `"in progress"`.
+
+To publish, copy the file into the public repository and render its page there, then open a pull request:
+
+```
+cp results/scoreboard.json ../relay-public/benchmarks/scoreboard/scoreboard.json
+node ../relay-public/benchmarks/scoreboard/render.mjs
+```

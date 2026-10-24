@@ -25,16 +25,19 @@ export function scheduleArgs({ spendCap, signedBy, keychain = "relay-openai", ex
 /** A value that looks like a key or token: never written into a schedule. */
 export const secretLike = (s) => /(sk-[A-Za-z0-9_-]{8,}|e2b_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_|xox[abp]-|AKIA[0-9A-Z]{12,}|_KEY=|_TOKEN=)/.test(String(s));
 
-/** The launchd plist: zsh -c 'exec "$0" "$@"' node autopilot.mjs <args>, every Monday at 06:00, logs in runs/. */
-export function plist({ bench, node, args, logDir = join(bench, "runs", "autopilot"), when = WHEN }) {
-	const program = ["/bin/zsh", "-c", 'exec "$0" "$@"', node, join(bench, "loop", "autopilot.mjs"), ...args];
+/**
+ * The launchd plist: zsh -c 'exec "$0" "$@"' node autopilot.mjs <args>, every Monday at 06:00, logs in runs/. Another
+ * weekly job (the scoreboard) passes its own `script`, `label`, log folder and time.
+ */
+export function plist({ bench, node, args, logDir = join(bench, "runs", "autopilot"), when = WHEN, script = "loop/autopilot.mjs", label = LABEL }) {
+	const program = ["/bin/zsh", "-c", 'exec "$0" "$@"', node, join(bench, script), ...args];
 	const envPath = [dirname(node), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].filter((p, i, a) => a.indexOf(p) === i).join(":");
 	const text = [
 		'<?xml version="1.0" encoding="UTF-8"?>',
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
 		'<plist version="1.0">',
 		"<dict>",
-		`\t<key>Label</key>\n\t<string>${LABEL}</string>`,
+		`\t<key>Label</key>\n\t<string>${xml(label)}</string>`,
 		"\t<key>ProgramArguments</key>",
 		"\t<array>",
 		...program.map((a) => `\t\t<string>${xml(a)}</string>`),
@@ -62,11 +65,11 @@ export function plist({ bench, node, args, logDir = join(bench, "runs", "autopil
 }
 
 /** The crontab line for Linux: the same job, keys from a file the founder keeps (chmod 600), never from the line. */
-export function crontabLine({ bench, node, args, when = WHEN, envFile = "$HOME/.relay-autopilot.env" }) {
+export function crontabLine({ bench, node, args, when = WHEN, envFile = "$HOME/.relay-autopilot.env", script = "loop/autopilot.mjs", log = "runs/autopilot/weekly.log" }) {
 	const q = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
-	const line = `${when.minute} ${when.hour} * * ${when.weekday} . ${envFile} && cd ${q(bench)} && ${q(node)} loop/autopilot.mjs ${args.filter((a, i, all) => a !== "--keychain" && all[i - 1] !== "--keychain").map(q).join(" ")} >> runs/autopilot/weekly.log 2>&1`;
+	const line = `${when.minute} ${when.hour} * * ${when.weekday} . ${envFile} && cd ${q(bench)} && ${q(node)} ${script} ${args.filter((a, i, all) => a !== "--keychain" && all[i - 1] !== "--keychain").map(q).join(" ")} >> ${log} 2>&1`;
 	if (secretLike(line)) throw new Error("the crontab line would carry a key");
 	return line;
 }
 
-export const plistPath = (home) => join(home, "Library", "LaunchAgents", `${LABEL}.plist`);
+export const plistPath = (home, label = LABEL) => join(home, "Library", "LaunchAgents", `${label}.plist`);

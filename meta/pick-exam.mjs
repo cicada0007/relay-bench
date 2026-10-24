@@ -25,13 +25,13 @@
 //   node meta/pick-exam.mjs --keychain relay-openai --openai-cap-usd 4 [--model gpt-6.1-sol] [--effort medium]
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
-import { gunzipSync } from "node:zlib";
 import { maxCallUsd, openaiCostUsd, openLedger, SpendCapError, usageSummary } from "../scripts/draft-spend.mjs";
 import { openaiClient } from "../scripts/draft-task.mjs";
-import { ATTEMPT_BUDGET_CHARS, patchEvidence, pick, PICKER_INSTRUCTIONS, pickerInput, showOrder, stepsFromClaudeStream, stepsFromRelaySession, stepsFromTrajectory, workLog } from "./pick.mjs";
+import { harborAttempt, patchAttempt } from "./evidence.mjs";
+import { pick, PICKER_INSTRUCTIONS, pickerInput, showOrder, workLog } from "./pick.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 export const FAMILIES = Object.freeze(["tb-relay-cc", "tb-cc-cc", "a-relay-cc"]);
@@ -43,68 +43,14 @@ const readJsonl = (path) =>
 		.filter((l) => l.trim())
 		.map((l) => JSON.parse(l));
 
-/** The agent folder of one Terminal-Bench trial. */
-const trialAgentDir = (round, r) => join(round, "F", "jobs", r.jobName, r.trialName, "agent");
-
-const firstUserText = (entries) => {
-	for (const e of entries) {
-		const m = e.message;
-		if (m?.role !== "user") continue;
-		const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((c) => (c.type === "text" ? c.text : "")).join("\n") : "";
-		if (text.trim()) return text;
-	}
-	return null;
-};
-const parseLines = (text, prefix) =>
-	text
-		.split("\n")
-		.filter((l) => l.startsWith(prefix))
-		.map((l) => {
-			try {
-				return JSON.parse(l);
-			} catch {
-				return null;
-			}
-		})
-		.filter(Boolean);
-
 /**
- * A Terminal-Bench attempt's actions and the task's words, from whichever transcript the trial kept: Harbor's
- * trajectory.json, Claude Code's stream (claude-code.txt), Relay's session files, or Relay's event stream (relay.jsonl).
+ * A Terminal-Bench attempt's actions and the task's words, from whichever transcript the trial kept (meta/evidence.mjs).
  * `kept` is false when it kept none of them.
  */
-export function tbAttempt(round, r) {
-	const dir = trialAgentDir(round, r);
-	const at = (f) => join(dir, f);
-	if (existsSync(at("trajectory.json"))) {
-		const trajectory = JSON.parse(readFileSync(at("trajectory.json"), "utf8"));
-		const task = trajectory.steps?.find((s) => s.source === "user")?.message;
-		return { kept: true, task: typeof task === "string" ? task : null, steps: stepsFromTrajectory(trajectory) };
-	}
-	if (existsSync(at("claude-code.txt"))) return { kept: true, task: null, steps: stepsFromClaudeStream(readFileSync(at("claude-code.txt"), "utf8")) };
-	const sessions = at("sessions");
-	const files = existsSync(sessions) ? readdirSync(sessions).filter((f) => f.endsWith(".jsonl")).sort() : [];
-	if (files.length) {
-		const texts = files.map((f) => readFileSync(join(sessions, f), "utf8"));
-		return { kept: true, task: firstUserText(texts.flatMap((t) => parseLines(t, '{"type":"message"'))), steps: texts.flatMap((t) => stepsFromRelaySession(t)) };
-	}
-	if (existsSync(at("relay.jsonl"))) {
-		const ends = parseLines(readFileSync(at("relay.jsonl"), "utf8"), '{"type":"message_end"');
-		return { kept: true, task: firstUserText(ends), steps: stepsFromRelaySession(ends.map((e) => JSON.stringify(e)).join("\n")) };
-	}
-	return { kept: false, task: null, steps: [] };
-}
+export const tbAttempt = (round, r) => harborAttempt(join(round, "F"), r);
 
 /** A test A attempt's evidence: its patch without noise files, and the project's own checks on it. */
-export function aAttempt(round, r) {
-	const patchPath = join(round, r.runId, "result.patch.gz");
-	const patch = existsSync(patchPath) ? gunzipSync(readFileSync(patchPath)).toString("utf8") : "";
-	const gates = r.judge?.gates ?? {};
-	const checks = Object.entries(gates)
-		.map(([name, ok]) => `${name}: ${ok ? "passed" : "failed"}`)
-		.join(", ");
-	return `The project's own checks on the result: ${checks || "none recorded"}.\n\nThe change:\n\n${patchEvidence(patch, ATTEMPT_BUDGET_CHARS)}`;
-}
+export const aAttempt = (round, r) => patchAttempt(round, r);
 
 /**
  * Every pair of every family asked for, as { family, key, task, attempts: [{ label, outcome, costUsd, evidence() }],
