@@ -176,7 +176,7 @@ export async function scoreRun({ records, loader, reuse = [], planned = null, se
 }
 
 /** Picker answers a stage may count: its own picks file, and the source's `reuse` files under the runs folder. */
-function picksFor(stageDir, runsDir, reuse = []) {
+export function picksFor(stageDir, runsDir, reuse = []) {
 	const own = join(stageDir, "meta", `picks-${PICKER_MODEL}-${PICKER_EFFORT}.jsonl`);
 	return [own, ...reuse.map((p) => join(runsDir, p))].flatMap(readJsonl);
 }
