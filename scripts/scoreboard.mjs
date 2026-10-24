@@ -227,7 +227,14 @@ export async function publicBenchmark(id, runsDir, sources = [...SOURCES, ...sca
 
 /** Relay's sealed exam: the bar's stages (RUNBOOK.md, "The bar"), numbers only, no task names. */
 export async function examBenchmark(examDir) {
-	const out = { id: "exam", title: "Relay's sealed exam", kind: "sealed", measure: "requirements met", runs: [] };
+	const out = {
+		id: "exam",
+		title: "Relay's sealed exam",
+		kind: "sealed",
+		about: "Tasks drafted from public issues filed after the models' training cutoffs, kept in a private repository the agent that improves Relay never sees (TIERS.md). Counts and scores only: no task is named.",
+		measure: "requirements met",
+		runs: [],
+	};
 	const runsDir = join(examDir, "runs", "bar");
 	const tasksDir = join(examDir, "tasks");
 	if (existsSync(join(runsDir, "records.jsonl"))) {
