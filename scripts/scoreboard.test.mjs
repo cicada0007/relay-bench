@@ -11,7 +11,8 @@ import { fakeExam, fakeHarborStage, fakePicker } from "../meta/fakes.mjs";
 import { buildGroups, defaultArms, harborLoader, patchLoader, runPicks } from "../meta/pick-groups.mjs";
 import { loadBenchmark } from "../runner/harbor-bench.mjs";
 import { openLedger } from "./draft-spend.mjs";
-import { buildScoreboard, difference, SCHEDULE_LABEL, scheduleArgsFor, toolEntry } from "./scoreboard.mjs";
+import { E2B_USD_PER_SECOND } from "./draft-spend.mjs";
+import { buildScoreboard, difference, sandboxOf, SCHEDULE_LABEL, scheduleArgsFor, toolEntry } from "./scoreboard.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const quiet = () => {};
@@ -103,6 +104,9 @@ test("each benchmark and model has every tool's score with its interval, cost pe
 	assert.ok(meta.costUsd > meta.attemptsUsd);
 	assert.equal(meta.costPerSolvedUsd, meta.costUsd / 2);
 	assert.ok(meta.medianMinutes >= 2, "its time is its slowest attempt");
+	assert.equal(typeof meta.sandboxUsd, "number");
+	assert.equal(meta.sandboxEstimatedTrials, 6, "every attempt of its three groups");
+	assert.equal(typeof relay.sandboxUsd, "number");
 	const d = run.differences.find((x) => x.of === "meta" && x.minus === "claude-code");
 	assert.equal(d.tasks, 3);
 	assert.ok(Math.abs(d.points - (200 / 3 - 200 / 3)) < 1e-9);
@@ -204,4 +208,25 @@ test("the weekly job carries no key and runs the scoreboard only; the command li
 	const wrote = spawnSync(process.execPath, ["scripts/scoreboard.mjs", "--runs", runsDir, "--exam", examDir, "--to", to, "--week", "2026-W43"], { cwd: ROOT, encoding: "utf8", env: { PATH: process.env.PATH, HOME: root } });
 	assert.equal(wrote.status, 0, wrote.stderr);
 	assert.ok(existsSync(to));
+	assert.ok(existsSync(join(root, "arm-outcomes.jsonl")), "the router's arm outcomes are written beside the scoreboard");
+	assert.match(wrote.stdout, /arm outcomes for the router \(relay router learn --import <file>\)/);
+	assert.doesNotMatch(wrote.stdout, /publish:/, "publishing is off unless --publish is given");
+	assert.deepEqual(scheduleArgsFor(["--publish"]), ["--weekly", "--publish"]);
+});
+
+test("sandbox cost sits beside model cost: as the runner recorded it, else estimated from the trial's start and end", () => {
+	assert.deepEqual(sandboxOf({ sandbox: { usd: 0.012 }, startedAt: "2026-10-24T10:00:00Z", finishedAt: "2026-10-24T11:00:00Z" }), { usd: 0.012, estimated: false });
+	const est = sandboxOf({ task: "terminal-bench/fix-git", startedAt: "2026-10-24T10:00:00Z", finishedAt: "2026-10-24T10:10:00Z" }, "terminal-bench-2-1");
+	assert.ok(est.estimated);
+	assert.ok(Math.abs(est.usd - 600 * E2B_USD_PER_SECOND) < 1e-12);
+	const large = sandboxOf({ task: "terminal-bench/caffe-cifar-10", startedAt: "2026-10-24T10:00:00Z", finishedAt: "2026-10-24T10:10:00Z" }, "terminal-bench-2-1");
+	assert.ok(Math.abs(large.usd - 2 * 600 * E2B_USD_PER_SECOND) < 1e-12, "4 vCPU and 8 GiB: twice the price");
+	assert.deepEqual(sandboxOf({ startedAt: "2026-10-24T10:00:00Z" }), { usd: 0, estimated: true });
+	const e = toolEntry("relay", [
+		{ task: "a", rep: 1, solved: true, usage: { costUsd: 1 }, sandbox: { usd: 0.5 } },
+		{ task: "b", rep: 1, solved: false, usage: { costUsd: 1 }, startedAt: "2026-10-24T10:00:00Z", finishedAt: "2026-10-24T10:00:10Z" },
+	]);
+	assert.equal(e.costUsd, 2, "model spend stays model spend");
+	assert.ok(Math.abs(e.sandboxUsd - (0.5 + 10 * E2B_USD_PER_SECOND)) < 1e-12);
+	assert.equal(e.sandboxEstimatedTrials, 1);
 });

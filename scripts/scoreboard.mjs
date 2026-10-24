@@ -328,7 +328,8 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			runs: { type: "string", default: join(ROOT, "runs") },
 			exam: { type: "string", default: join(ROOT, "..", "relay-exam") },
 			to: { type: "string", default: join(ROOT, "results", "scoreboard.json") },
-			"arm-outcomes": { type: "string", default: join(ROOT, "results", "arm-outcomes.jsonl") },
+			// Beside the scoreboard file unless named: results/arm-outcomes.jsonl.
+			"arm-outcomes": { type: "string" },
 			publish: { type: "boolean", default: false },
 			public: { type: "string", default: join(ROOT, "..", "relay-public") },
 			week: { type: "string" },
@@ -389,8 +390,9 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 	mkdirSync(dirname(args.to), { recursive: true });
 	writeFileSync(args.to, `${JSON.stringify(board, null, 2)}\n`);
 	console.log(`wrote ${args.to} (week ${board.week})`);
-	writeArmOutcomes(resolve(args["arm-outcomes"]), outcomes);
-	console.log(`wrote ${resolve(args["arm-outcomes"])}: ${outcomes.lines.length} arm outcomes for the router (relay router learn --import <file>)`);
+	const outcomesPath = resolve(args["arm-outcomes"] ?? join(dirname(resolve(args.to)), "arm-outcomes.jsonl"));
+	writeArmOutcomes(outcomesPath, outcomes);
+	console.log(`wrote ${outcomesPath}: ${outcomes.lines.length} arm outcomes for the router (relay router learn --import <file>)`);
 	if (args.publish) {
 		const { describePublish, publishScoreboard } = await import("./publish-scoreboard.mjs");
 		const published = publishScoreboard({ from: resolve(args.to), publicDir: resolve(args.public), log: (l) => console.log(`publish: ${l}`) });
