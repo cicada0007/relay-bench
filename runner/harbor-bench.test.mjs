@@ -67,6 +67,12 @@ test("one Harbor job is pinned to the dataset digest, one task, one tool, the mo
 	const anthropic = harborArgv({ bench, job: { ...job, tool: "relay", model: "claude-haiku-5-5" }, provider: "anthropic", capUsd: 0.5, jobsDir: "/x", jobName: "j2" });
 	assert.equal(anthropic[anthropic.indexOf("--ae") + 1], "ANTHROPIC_API_KEY=${RELAY_BENCH_ANTHROPIC_KEY}");
 	assert.equal(anthropic[anthropic.indexOf("-a") + 1], "relay_bench_agents:Relay");
+	assert.ok(!anthropic.includes("version=0.6.121"));
+	const champion = harborArgv({ bench, job: { ...job, tool: "relay", model: "claude-haiku-5-5" }, provider: "anthropic", capUsd: 1, jobsDir: "/x", jobName: "j3", relayVersion: "0.6.121" });
+	assert.deepEqual(champion.filter((a, i) => champion[i - 1] === "--ak"), ["cap_usd=1", "version=0.6.121"]);
+	const codexJob = harborArgv({ bench, job, provider: "openai", capUsd: 1, jobsDir: "/x", jobName: "j4", relayVersion: "0.6.121" });
+	assert.ok(!codexJob.includes("version=0.6.121"), "only Relay's trials get the Relay version");
+	assert.throws(() => harborArgv({ bench, job, provider: "openai", capUsd: 1, jobsDir: "/x", jobName: "j5", relayVersion: "latest; rm -rf /" }), /not a release version/);
 });
 
 test("a trial's record has test F's shape, and an infrastructure failure keeps its tail", () => {
@@ -93,7 +99,8 @@ test("a dry run prints the plan and the most it could cost, with no key and no H
 	assert.equal(out.status, 0, out.stderr);
 	assert.match(out.stdout, /10 tasks × relay, claude-code × 1 trials on claude-haiku-5-5 = 20 trials, 0 done, 20 to go/);
 	assert.match(out.stdout, /at most \$15\.00 in all/);
-	assert.match(out.stdout, /would run swebench-verified\|swe-bench\//);
+	assert.match(out.stdout, /^swebench-verified-claude-haiku-5-5: SWE-bench Verified/m);
+	assert.match(out.stdout, /would run swebench-verified-claude-haiku-5-5\|swe-bench\/.*\|relay\|claude-haiku-5-5\|r1/);
 	const refused = spawnSync(process.execPath, ["runner/harbor-bench.mjs", "--bench", "swebench-pro", "--tools", "codex", "--model", "claude-haiku-5-5", "--stage-cap-usd", "5", "--dry-run"], { cwd: ROOT, env, encoding: "utf8" });
 	assert.notEqual(refused.status, 0);
 	assert.match(refused.stderr, /codex does not run anthropic models/);

@@ -5,11 +5,15 @@
 // (meta/pick-groups.mjs) and the scoreboard (scripts/scoreboard.mjs) read every benchmark alike.
 //
 //   node runner/harbor-bench.mjs --bench swebench-verified --tools relay,claude-code --model claude-haiku-5-5 \
-//     --trials 1 --cap-usd 1 --stage-cap-usd 60 --out runs/scoreboard --dry-run
+//     --trials 1 --cap-usd 1 --stage-cap-usd 150 --out runs/scoreboard --dry-run
+//
+// Records land in <out>/<test>/ (the test defaults to <bench>-<model>, such as swebench-verified-claude-haiku-5-5), the
+// folders scripts/scoreboard.mjs reads.
 //
 // - Pinned: Harbor HARBOR_VERSION and each benchmark's dataset version, by digest (runner/<bench>-tasks.json lists its
 //   tasks, written from Harbor's registry by harbor-agents/dataset_tasks.py). Relay, Claude Code, Codex and Node are
-//   pinned in harbor-agents/relay_bench_agents.py, the Harbor agents.
+//   pinned in harbor-agents/relay_bench_agents.py, the Harbor agents; --relay-version installs another Relay release (the
+//   champion of the day) with Relay's own installer, and Harbor records the version each trial ran.
 // - Same model: every tool runs the one test model, from its provider. Claude Code runs only Anthropic models and Codex
 //   only OpenAI models, so Codex is compared with Relay on an OpenAI model (runner/arms.mjs, the same rule as the bar).
 // - Cost: every trial's model traffic goes through the round's meter inside the task container, which also stops a
@@ -114,9 +118,13 @@ export function chooseTasks(bench, { tasks, sample, test }) {
 	return chosen;
 }
 
-/** The arguments of one Harbor job: one task, one tool, one attempt, on the pinned dataset version. No key in them. */
-export function harborArgv({ bench, job, provider, capUsd, jobsDir, jobName }) {
+/**
+ * The arguments of one Harbor job: one task, one tool, one attempt, on the pinned dataset version. No key in them.
+ * `relayVersion` installs that Relay release in place of the agents' pin (the champion of the day).
+ */
+export function harborArgv({ bench, job, provider, capUsd, jobsDir, jobName, relayVersion = null }) {
 	const key = PROVIDER_KEYS[provider];
+	if (relayVersion && !/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(relayVersion)) throw new Error(`--relay-version ${relayVersion} is not a release version`);
 	return [
 		"run",
 		"-d", `${bench.dataset}@${bench.ref}`,
@@ -125,6 +133,7 @@ export function harborArgv({ bench, job, provider, capUsd, jobsDir, jobName }) {
 		"-m", `${provider}/${job.model}`,
 		"--ae", `${key.as}=\${${key.from}}`,
 		"--ak", `cap_usd=${capUsd}`,
+		...(relayVersion && job.tool === "relay" ? ["--ak", `version=${relayVersion}`] : []),
 		"--env", "e2b",
 		"-k", "1", "-n", "1",
 		"-o", jobsDir,
@@ -209,7 +218,7 @@ export async function runStage(args) {
 	const bench = loadBenchmark(args.bench);
 	const tools = args.tools.split(",");
 	const provider = checkTools(tools, args.model);
-	const test = args.test ?? bench.id;
+	const test = args.test ?? `${bench.id}-${args.model}`;
 	const capUsd = Number(args["cap-usd"]);
 	const stageCap = Number(args["stage-cap-usd"]);
 	if (!(capUsd > 0) || !(stageCap > 0)) throw new Error("--cap-usd and --stage-cap-usd must be amounts above 0");
@@ -252,7 +261,7 @@ export async function runStage(args) {
 	const short = (task) => task.split("/").pop().slice(0, 60);
 	function attempt(job, n) {
 		const jobName = `${test}-${short(job.task)}-${job.tool}-r${job.rep}-a${n}-${Date.now().toString(36)}`;
-		const argv = harborArgv({ bench, job, provider, capUsd, jobsDir, jobName });
+		const argv = harborArgv({ bench, job, provider, capUsd, jobsDir, jobName, relayVersion: args["relay-version"] ?? null });
 		return new Promise((resolve) => {
 			const started = new Date().toISOString();
 			const child = spawn("harbor", argv, { env, cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
@@ -327,12 +336,15 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			"cap-usd": { type: "string", default: "1" },
 			concurrency: { type: "string", default: "4" },
 			out: { type: "string", default: "runs/scoreboard" },
-			// The stage's name; its records go in <out>/<test>/. Defaults to the benchmark's id.
+			// The stage's name; its records go in <out>/<test>/, with their own spend and stage cap. Defaults to
+			// <bench>-<model>, so each model's stage is capped on its own.
 			test: { type: "string" },
 			// Development only: a comma list of task names (with or without the dataset's org) in place of the full set.
 			tasks: { type: "string" },
 			// A fixed sample of n tasks (seeded 20261015), saved as <out>/<test>/sample.json on the first paid run.
 			sample: { type: "string" },
+			// The Relay release to install (Relay's own installer, RELAY_VERSION); without it, the agents' pin.
+			"relay-version": { type: "string" },
 			"dry-run": { type: "boolean", default: false },
 			reclassify: { type: "boolean", default: false },
 		},

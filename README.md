@@ -11,6 +11,9 @@ use directly: Claude Code, Codex, Hermes and Prime Agent, each on the same model
 - Tasks, hidden judges, the runner and the cost meter arrive here as they are built.
 - [GATE.md](GATE.md) fixes how a new Relay release is judged against the current one; [ledger/ledger.json](ledger/ledger.json)
   holds every release that passed it on the exam, numbers only.
+- [results/scoreboard.json](results/scoreboard.json) is the scoreboard, rebuilt every week by
+  [scripts/scoreboard.mjs](scripts/scoreboard.mjs): each tool and Relay's meta-harness on Terminal-Bench 2.1, SWE-bench
+  Verified, SWE-bench Pro and the sealed exam, per model, numbers only (RUNBOOK.md, "The scoreboard, every week").
 - [scripts/model-watch.mjs](scripts/model-watch.mjs) examines a new model on the exam before Relay routes to it (GATE.md,
   amendment 3); a dry run unless given a spend cap.
 - [loop/](loop/) is the improvement loop: every week it proposes changes to Relay, one lane each, pre-screens them and

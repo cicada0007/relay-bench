@@ -19,7 +19,7 @@
 //   node scripts/scoreboard.mjs --install-schedule weekly    the weekly job (macOS launchd; prints a crontab line)
 //   node scripts/scoreboard.mjs --remove-schedule
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -34,15 +34,23 @@ const ROOT = new URL("..", import.meta.url).pathname;
 export const REPOSITORY = "https://github.com/cicada0007/relay-bench";
 
 /**
- * Where each benchmark's records are. `stage` is a Harbor stage folder under the runs folder; `reuse` names picker
- * answers from elsewhere that the entry may count (round 1's exam asked about these same Terminal-Bench pairs).
+ * Where each benchmark's records are, besides every stage folder under <runs>/scoreboard/ (runner/harbor-bench.mjs's
+ * default, read by the benchmark its records name). `stage` is a Harbor stage folder under the runs folder; `reuse`
+ * names picker answers from elsewhere that the entry may count (round 1's exam asked about these same pairs).
  */
-export const SOURCES = Object.freeze([
-	{ benchmark: "terminal-bench-2-1", stage: "round-1/F", label: "Round 1, test F", reuse: ["meta/pick-exam-gpt-6.1-sol-medium.jsonl"] },
-	{ benchmark: "terminal-bench-2-1", stage: "scoreboard/terminal-bench-2-1" },
-	{ benchmark: "swebench-verified", stage: "scoreboard/swebench-verified" },
-	{ benchmark: "swebench-pro", stage: "scoreboard/swebench-pro" },
-]);
+export const SOURCES = Object.freeze([{ benchmark: "terminal-bench-2-1", stage: "round-1/F", label: "Round 1, test F", reuse: ["meta/pick-exam-gpt-6.1-sol-medium.jsonl"] }]);
+export const SCANNED = "scoreboard";
+
+/** Every stage folder under <runs>/scoreboard/, as a source of the benchmark its first record names. */
+export function scannedSources(runsDir) {
+	const dir = join(runsDir, SCANNED);
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir, { withFileTypes: true })
+		.filter((d) => d.isDirectory() && existsSync(join(dir, d.name, "records.jsonl")))
+		.map((d) => ({ benchmark: readJsonl(join(dir, d.name, "records.jsonl"))[0]?.benchmark, stage: join(SCANNED, d.name) }))
+		.filter((s) => s.benchmark)
+		.sort((a, b) => a.stage.localeCompare(b.stage));
+}
 
 /** Checked in Harbor's registry on 24 Oct 2026 (Harbor 0.24.0): asked for, and not there as an official release. */
 export const NOT_IN_REGISTRY = Object.freeze([
@@ -187,7 +195,7 @@ const MODEL_ORDER = Object.keys(MODEL_NAMES);
 const byModel = (a, b) => MODEL_ORDER.indexOf(a.model) - MODEL_ORDER.indexOf(b.model) || a.test.localeCompare(b.test);
 
 /** One public benchmark: its pinned dataset and every run of it in the runs folder. */
-export async function publicBenchmark(id, runsDir, sources = SOURCES) {
+export async function publicBenchmark(id, runsDir, sources = [...SOURCES, ...scannedSources(runsDir)]) {
 	const bench = loadBenchmark(id);
 	const out = {
 		id,
@@ -246,7 +254,7 @@ export function weekRows(week, benchmarks) {
 }
 
 /** The whole scoreboard. `previous` is last week's file: its history is carried, this week's lines replaced. */
-export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), generatedAt = new Date().toISOString(), commit = null, previous = null, sources = SOURCES }) {
+export async function buildScoreboard({ runsDir, examDir, week = isoWeek(), generatedAt = new Date().toISOString(), commit = null, previous = null, sources = [...SOURCES, ...scannedSources(runsDir)] }) {
 	const benchmarks = [];
 	for (const id of Object.keys(BENCHMARKS)) benchmarks.push(await publicBenchmark(id, runsDir, sources));
 	benchmarks.push(await examBenchmark(examDir));
