@@ -270,14 +270,19 @@ export const armSetKey = (arms) => sortArms(arms).map((a) => `${a.harness}:${a.s
 export const matchingRow = (table, { kind, difficulty }) => (table ?? []).find((row) => row.difficulty.includes(difficulty) && (row.kinds === undefined || row.kinds.includes(kind)));
 
 const HARNESS_WORDS = { relay: "Relay", "claude-code": "Claude Code", codex: "Codex" };
-const STRATEGY_WORDS = { direct: "", "reproduce-first": " reproducing the problem first", "plan-first": " planning first" };
+const DOING = { direct: "working straight at it", "reproduce-first": "reproducing the problem first", "plan-first": "planning first" };
+const DOES = { direct: "works straight at it", "reproduce-first": "reproduces the problem first", "plan-first": "plans first" };
 const COUNT_WORDS = ["no", "one", "two", "three", "four", "five"];
-/** "one Relay attempt", "two attempts at once, Relay and Claude Code". */
+const list = (items) => (items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+/** A set of arms in the harness's own words (table.ts setWords): "one Relay attempt", "two attempts at once, Relay and Claude Code". */
 export function setWords(arms) {
 	const sorted = sortArms(arms);
-	const each = sorted.map((a) => `${HARNESS_WORDS[a.harness]}${STRATEGY_WORDS[a.strategy]}`);
-	if (sorted.length === 1) return `one ${HARNESS_WORDS[sorted[0].harness]} attempt${STRATEGY_WORDS[sorted[0].strategy]}`;
-	return `${COUNT_WORDS[sorted.length] ?? sorted.length} attempts at once, ${each.slice(0, -1).join(", ")} and ${each.at(-1)}`;
+	const first = sorted[0];
+	if (!first) return "no attempt";
+	if (sorted.length === 1) return `one ${HARNESS_WORDS[first.harness]} attempt${first.strategy === "direct" ? "" : ` that ${DOES[first.strategy]}`}`;
+	const count = COUNT_WORDS[sorted.length] ?? String(sorted.length);
+	if (new Set(sorted.map((a) => a.harness)).size === 1) return `${count} ${HARNESS_WORDS[first.harness]} attempts at once, ${list(sorted.map((a) => `one ${DOING[a.strategy]}`))}`;
+	return `${count} attempts at once, ${list(sorted.map((a) => (a.strategy === "direct" ? HARNESS_WORDS[a.harness] : `${HARNESS_WORDS[a.harness]} ${DOING[a.strategy]}`)))}`;
 }
 
 /**
@@ -360,19 +365,22 @@ export function routerCandidates({ cycle, outcomes, arch, archText, settings, so
 			notes.push(`router ${row.id}: its own arms (${setWords(row.arms)}) have ${own?.runs ?? 0} benchmark runs, fewer than ${minSamples}, so nothing is compared`);
 			continue;
 		}
-		const others = [...sets.values()].filter((set) => set.key !== ownKey && set.runs >= minSamples && perDollar(set) !== null);
-		others.sort((a, b) => perDollar(b) - perDollar(a) || a.costUsd / a.runs - b.costUsd / b.runs || a.arms.length - b.arms.length || a.key.localeCompare(b.key));
-		const best = others[0];
 		const ownPer = perDollar(own);
-		if (!best || ownPer === null || perDollar(best) <= ownPer) {
+		const dropOf = (set) => 100 * (share(own) - share(set));
+		// The sets with enough runs that gave more proven results per dollar than the row's own, the most first.
+		const more = [...sets.values()].filter((set) => set.key !== ownKey && set.runs >= minSamples && perDollar(set) !== null && ownPer !== null && perDollar(set) > ownPer);
+		more.sort((a, b) => perDollar(b) - perDollar(a) || a.costUsd / a.runs - b.costUsd / b.runs || a.arms.length - b.arms.length || a.key.localeCompare(b.key));
+		if (!more.length) {
 			notes.push(`router ${row.id}: no set of arms gave more proven results per dollar than its own (${setWords(row.arms)}, ${own.proven} of ${own.runs})`);
 			continue;
 		}
-		const dropPoints = 100 * (share(own) - share(best));
-		if (dropPoints > maxDropPoints) {
-			notes.push(`router ${row.id}: ${setWords(best.arms)} gave more proven results per dollar, but ${dropPoints.toFixed(1)} points less often than its own arms (${best.proven} of ${best.runs} against ${own.proven} of ${own.runs}), past the gate's ${maxDropPoints}-point margin`);
+		const best = more.find((set) => dropOf(set) <= maxDropPoints);
+		if (!best) {
+			const top = more[0];
+			notes.push(`router ${row.id}: ${setWords(top.arms)} gave more proven results per dollar, but ${dropOf(top).toFixed(1)} points less often than its own arms (${top.proven} of ${top.runs} against ${own.proven} of ${own.runs}), past the gate's ${maxDropPoints}-point margin`);
 			continue;
 		}
+		const dropPoints = dropOf(best);
 		const arms = rowArms(best.arms, row);
 		const words = `In Relay's benchmark runs (week ${cycle}), on tasks this row starts, ${setWords(best.arms)} gave a proven result ${best.proven} of ${best.runs} times for about ${money3(best.costUsd / best.runs)} a task, and ${setWords(row.arms)} ${own.proven} of ${own.runs} times for about ${money3(own.costUsd / own.runs)}.`;
 		const value = table.map((r, i) => (i === index ? { ...r, arms, words } : r));

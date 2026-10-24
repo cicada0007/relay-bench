@@ -91,7 +91,8 @@ test("each run counts on the first row its kind and difficulty match, per set of
 	const pair = medium.get("relay:direct,claude-code:direct");
 	assert.deepEqual([pair.runs, pair.proven, Math.round(pair.costUsd * 100) / 100, pair.tasks.size], [10, 10, 0.8, 10]);
 	assert.equal(setWords(pair.arms), "two attempts at once, Relay and Claude Code");
-	assert.equal(setWords([{ harness: "relay", strategy: "reproduce-first" }]), "one Relay attempt reproducing the problem first");
+	assert.equal(setWords([{ harness: "relay", strategy: "reproduce-first" }]), "one Relay attempt that reproduces the problem first");
+	assert.equal(setWords([{ harness: "relay", strategy: "plan-first" }, { harness: "relay", strategy: "direct" }]), "two Relay attempts at once, one working straight at it and one planning first");
 });
 
 test("a set of arms that proved more per dollar on a row's tasks becomes that row's proposal; the rest say why not", () => {
@@ -142,6 +143,16 @@ test("a cheaper set proven more than the gate's margin less often, or too few ru
 	const r = routerCandidates({ cycle: "2026-W44", outcomes: drop, arch, archText, settings: many, sources });
 	assert.deepEqual(r.candidates, []);
 	assert.ok(r.notes.some((n) => /^router hard: one Relay attempt gave more proven results per dollar, but 30\.0 points less often than its own arms \(6 of 10 against 9 of 10\), past the gate's 5-point margin/.test(n)), r.notes.join("\n"));
+	// The set with the most per dollar is past the margin; the next one, still more per dollar than the row's own, is not.
+	const next = fakeArmOutcomes([
+		{ kind: "other", difficulty: "hard", arms: ["relay", "claude-code"], n: 10, proven: 9, costUsd: 0.4 },
+		{ kind: "other", difficulty: "hard", arms: ["relay"], n: 10, proven: 6, costUsd: 0.05 },
+		{ kind: "other", difficulty: "hard", arms: [{ harness: "relay", strategy: "direct" }, { harness: "relay", strategy: "plan-first" }], n: 10, proven: 9, costUsd: 0.1 },
+	]);
+	const second = routerCandidates({ cycle: "2026-W44", outcomes: next, arch, archText, settings: many, sources }).candidates;
+	assert.equal(second.length, 1);
+	assert.deepEqual(archAfter(second[0].patch, archText).router.table.find((r) => r.id === "hard").arms, [{ harness: "relay", strategy: "direct" }, { harness: "relay", strategy: "plan-first" }]);
+	assert.equal(second[0].change.summary, "the hard row from two attempts at once, Relay and Claude Code to two Relay attempts at once, one working straight at it and one planning first");
 	const few = fakeArmOutcomes([
 		{ kind: "feature", difficulty: "medium", arms: ["relay"], n: 10, proven: 2, costUsd: 0.05 },
 		{ kind: "feature", difficulty: "medium", arms: ["relay", "claude-code"], n: 4, proven: 4, costUsd: 0.06 },
