@@ -240,6 +240,8 @@ export function afterMerge(number, o, ops) {
 /** The gate's arguments for this week's build, without its two caps (each look adds its own). */
 export function gateArgs({ st, o, ready, dir, design }) {
 	const lanes = join(dir, "release", "lanes.json");
+	// A release that changes the router is judged with the meta-harness on for both arms (GATE.md, amendment 5).
+	const meta = readJson(join(dir, "cycle.json"))?.package?.relayMeta === true;
 	return [
 		"--run",
 		"--test", `gate-${st.build}`,
@@ -253,6 +255,7 @@ export function gateArgs({ st, o, ready, dir, design }) {
 		...(design.looks > 1 ? ["--looks", String(design.looks), "--spending", design.spending] : []),
 		"--plan-tasks", String(design.plannedTasks),
 		...(existsSync(lanes) ? ["--combined", lanes] : []),
+		...(meta ? ["--relay-meta"] : []),
 		"--model", o.model,
 		"--reps", String(o.gate.reps),
 		"--cap-usd", String(o.gate.capUsdPerRun),
@@ -300,7 +303,7 @@ export function pullRequestBody({ prBody, st, result, ledgerLine, o, cycle, dir,
 	const gateCmd = [
 		`node runner/gate.mjs --test gate-${st.build} --champion ${st.champion} --candidate ${st.build} \\`,
 		`  --candidate-package runs/loop/${cycle}/release/relay-${st.build}.tgz --tier exam \\`,
-		`  --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate --anchors ../relay-exam/anchors/${result.anchors?.version ?? "<version>"}.json${existsSync(join(dir, "release", "lanes.json")) ? ` \\\n  --combined runs/loop/${cycle}/release/lanes.json` : ""}`,
+		`  --tasks-dir ../relay-exam/tasks --out ../relay-exam/runs/gate --anchors ../relay-exam/anchors/${result.anchors?.version ?? "<version>"}.json${existsSync(join(dir, "release", "lanes.json")) ? ` \\\n  --combined runs/loop/${cycle}/release/lanes.json` : ""}${readJson(join(dir, "cycle.json"))?.package?.relayMeta === true ? " --relay-meta" : ""}`,
 	].join("\n");
 	const L = [
 		head,
@@ -504,6 +507,7 @@ export async function runWeek(options, ops) {
 			model: o.model,
 			exam: o.exam,
 			teaching: o.teaching ?? null,
+			armOutcomes: o.armOutcomes ?? null,
 			packages: join(dir, "packages"),
 			ledgerPath: o.ledgerPath,
 			spendCap,
@@ -802,6 +806,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 			records: { type: "string", multiple: true },
 			"tasks-dir": { type: "string", multiple: true },
 			teaching: { type: "string" },
+			"arm-outcomes": { type: "string" },
 			champion: { type: "string" },
 			cycle: { type: "string" },
 			out: { type: "string" },
@@ -829,6 +834,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		records: (values.records ?? inputs.records).map((p) => resolve(p)),
 		tasksDirs: (values["tasks-dir"] ?? inputs.tasksDirs).map((p) => resolve(p)),
 		teaching: values.teaching ? resolve(values.teaching) : null,
+		armOutcomes: values["arm-outcomes"] ? resolve(values["arm-outcomes"]) : null,
 		champion: values.champion ?? null,
 		cycle: values.cycle ?? null,
 		ledgerPath: values.ledger ? resolve(values.ledger) : undefined,
@@ -838,7 +844,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
 		if (values["install-schedule"] !== "weekly") throw new Error("--install-schedule takes weekly");
 		const extra = [];
 		// Never --champion: after a merge the champion is the release that holds it, which the autopilot records itself.
-		for (const [flag, v] of [["--model", values.model], ["--harness", values.harness && resolve(values.harness)], ["--exam", values.exam && resolve(values.exam)]]) if (v) extra.push(flag, v);
+		for (const [flag, v] of [["--model", values.model], ["--harness", values.harness && resolve(values.harness)], ["--exam", values.exam && resolve(values.exam)], ["--arm-outcomes", values["arm-outcomes"] && resolve(values["arm-outcomes"])]]) if (v) extra.push(flag, v);
 		for (const r of values.records ?? []) extra.push("--records", resolve(r));
 		for (const t of values["tasks-dir"] ?? []) extra.push("--tasks-dir", resolve(t));
 		installSchedule({ ...options, scheduleExtra: extra }, ops);

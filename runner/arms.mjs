@@ -70,7 +70,10 @@ export const ARMS = {
 			`relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
 		/** The queue keeps its plan and tasks on disk; running it again picks up where it stopped. */
 		resume: ({ capUsd }) => `relay queue run --spend-cap ${capUsd}`,
-		env: () => ({}),
+		/** `meta`: the meta-harness on (RELAY_META=1, relay-harness D-98 to D-103), for runs that judge a change to a value
+		 *  that acts only with it on, such as the router's starting table; the same for both arms of a gate (GATE.md,
+		 *  amendment 5). A release without the meta-harness ignores it. */
+		env: ({ meta = false } = {}) => (meta ? { RELAY_META: "1" } : {}),
 		/** Relay's result is what a reviewer would merge: its verified task branches, merged in plan order. */
 		result: "relay-merge",
 	},

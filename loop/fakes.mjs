@@ -44,7 +44,56 @@ export function fakeArch() {
 		budgets: { turnsPerAttempt: 80, tokensPerAttempt: 50000000, firstRunSpendCap: { perTaskUsd: 25, perDayUsd: 100 }, releaseCeilings: { maxUsdPerTask: null, maxMinutesPerTask: 720, maxSubagentDepth: 3, egress: null } },
 		topology: [{ id: "worker", words: "A queue task's session.", runsOn: "the strong or fast tier", prompts: ["queue.requestCheck"] }],
 		selfModel: { minSamples: 5, blindSpots: [] },
+		// The meta-harness's router (relay-harness D-101), shaped like the harness's starting table.
+		router: {
+			table: [
+				{ id: "easy", difficulty: ["easy"], arms: [{ harness: "relay", strategy: "direct" }], words: "One attempt on easy tasks." },
+				{ id: "medium", difficulty: ["medium"], arms: [{ harness: "relay", strategy: "direct" }], words: "One attempt on medium tasks." },
+				{ id: "hard-bug", difficulty: ["hard"], kinds: ["bug", "test"], arms: [{ harness: "relay", strategy: "reproduce-first" }, { harness: "claude-code", strategy: "direct", otherwise: { harness: "relay", strategy: "direct" } }], words: "Two attempts on hard bug fixes." },
+				{ id: "hard", difficulty: ["hard"], arms: [{ harness: "relay", strategy: "direct" }, { harness: "claude-code", strategy: "direct", otherwise: { harness: "relay", strategy: "plan-first" } }], words: "Two attempts on hard tasks." },
+			],
+			verifierShare: 0.2,
+			minArmUsd: 0.5,
+			minGain: 0.05,
+			sharedWeight: 0.25,
+			values: { proven: 1, merged: 1.5, mergedAfterEdits: 1.25, closed: 0.5, reverted: -1 },
+			provenHarnesses: [{ harness: "claude-code", evidence: "Made up." }],
+			learnSchedule: "0 6 * * 1",
+		},
 	};
+}
+
+/**
+ * Made-up arm outcomes, as scripts/arm-outcomes.mjs writes them: for each entry of `runs` ({ kind, difficulty, arms:
+ * ["relay", "claude-code"], n, proven, costUsd (a run, all its arms) }), `n` runs, the first `proven` of them with a
+ * verified, picked arm.
+ */
+export function fakeArmOutcomes(runs) {
+	const lines = [];
+	let minute = 0;
+	for (const r of runs) {
+		for (let i = 0; i < r.n; i++) {
+			const at = new Date(Date.UTC(2026, 9, 20, 10, minute++)).toISOString();
+			const arms = r.arms.map((a) => (typeof a === "string" ? { harness: a, strategy: "direct" } : a));
+			arms.forEach((arm, j) =>
+				lines.push({
+					at,
+					projectKey: "bench/terminal-bench-2-1",
+					taskId: `terminal-bench/t${minute} r1 ${arms.map((x) => x.harness).join("+")}`,
+					kind: r.kind,
+					difficulty: r.difficulty,
+					arm: { ...arm, model: "anthropic/claude-haiku-5-5", budgetUsd: 1, where: "e2b" },
+					ending: "finished",
+					verified: i < r.proven,
+					picked: j === 0,
+					costUsd: r.costUsd / arms.length,
+					durationMs: 60_000,
+					armId: `a${j + 1}`,
+				}),
+			);
+		}
+	}
+	return lines;
 }
 
 export const fakeArchText = () => serializeLike(fakeArch(), "{\n\t\"x\"");
