@@ -36,6 +36,8 @@ console.log(
 	JSON.stringify({
 		planned: tasks.length,
 		verified: tasks.filter((t) => t.status === "verified").length,
+		// Relay 0.6.132 (D-115): a verified task with a requirement its own checks marked "not met" is partly proven, not done.
+		partlyProven: tasks.filter((t) => t.status === "verified" && t.requirements?.unproven?.some((entry) => entry.verdict === "not met")).length,
 		statuses: Object.fromEntries(tasks.map((t) => [t.id, t.status])),
 		merged,
 		conflicts,

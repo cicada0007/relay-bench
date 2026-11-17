@@ -59,6 +59,9 @@ test("a gate arm reads Relay's own claim of being done", () => {
 	const relayMerge = { planned: 3, verified: 3 };
 	assert.equal(saidDone("relay@0.6.121", { exitCode: 1, stdout: "", relayMerge }), true);
 	assert.equal(saidDone("relay@0.6.121", { exitCode: 0, stdout: "", relayMerge: { planned: 3, verified: 2 } }), false);
+	// Every task verified, but one only partly proven: Relay did not say done.
+	assert.equal(saidDone("relay@0.6.132", { exitCode: 0, stdout: "", relayMerge: { planned: 3, verified: 3, partlyProven: 1 } }), false);
+	assert.equal(saidDone("relay@0.6.132", { exitCode: 0, stdout: "", relayMerge: { planned: 3, verified: 3, partlyProven: 0 } }), true);
 });
 
 test("Codex runs in its documented unattended mode on an OpenAI model, with stdin closed", () => {
