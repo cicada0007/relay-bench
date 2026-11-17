@@ -65,3 +65,9 @@ sandbox. The Relay arm now sets `RELAY_SIGN_IN_FIRST=0`, the switch Relay reads 
 (`core/relay-account/sign-in-first.ts`); the $20-per-machine sign-in rule (D-71) still applies and no run's cap comes
 near it. The refused run is kept as `void-records.jsonl` and not counted; Relay's smoke run starts again, alone, with
 the same task, model and $3 cap. Claude Code's smoke run was not touched.
+
+## Outcome (17 Nov 2026, 10:03 UTC): stopped after the smoke
+
+Both smoke arms reached their $3 cap before finishing the task, so by the projection fixed above the full run does
+not fit the $40 cap and was not started. The three rules were not tested. See `SMOKE.md` for the numbers and
+`smoke-records.jsonl` for the records (keys and transcripts left out).
