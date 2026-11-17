@@ -8,22 +8,23 @@ import { defaultBuildLogger, Template } from "e2b";
 /** The repository root: files the image copies (the meter) are named from here. */
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-export const TEMPLATE_NAME = "relay-bench-round-1";
+export const TEMPLATE_NAME = "relay-bench-small-1";
 export const PINS = Object.freeze({
 	node: "22",
-	relay: "0.6.118",
-	primeAgent: "0.10.0",
+	relay: "0.6.128",
+	primeAgent: "0.10.2",
 	claudeCode: "2.1.300",
 	hermes: "0.22.2",
 	/** Codex CLI, for the comparison on an OpenAI model: 0.163.0, released 15 Oct 2026 (npm @openai/codex). Its flags
 	 *  were read from this version's `codex exec --help` (runner/arms.mjs). Added after round 1; the image must be built
 	 *  again before Codex runs. */
-	codex: "0.163.0",
+	codex: "0.167.0",
 });
 
 /** PATH inside a run: where each tool's installer puts its command for the sandbox user. */
 export const RUN_PATH = [
 	"/home/user/.relay/npm-global/bin",
+	"/home/user/.relay/bin",
 	"/home/user/.local/bin",
 	"/home/user/.prime-agent/bin",
 	"/home/user/.hermes/bin",

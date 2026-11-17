@@ -65,11 +65,23 @@ if (resolved.override) {
 	const unpriced = unpricedProblems([resolved.override.model]);
 	if (unpriced.length) throw new Error(unpriced[0]);
 }
-const KEY_ENV = { anthropic: "RELAY_BENCH_ANTHROPIC_KEY", openai: "RELAY_BENCH_OPENAI_KEY" };
+const KEY_ENV = { anthropic: "RELAY_BENCH_ANTHROPIC_KEY", openai: "RELAY_BENCH_OPENAI_KEY", bedrock: "RELAY_BENCH_BEDROCK_KEY" };
 const key = process.env[KEY_ENV[provider]];
 if (!key) throw new Error(`${KEY_ENV[provider]} is not set`);
-/** The one key a run gets, under the names its tools read: Codex reads CODEX_API_KEY for `codex exec`. */
-const keyEnv = provider === "openai" ? { OPENAI_API_KEY: key, CODEX_API_KEY: key } : { ANTHROPIC_API_KEY: key };
+/** The one key a run gets, under the names its tools read: Codex reads CODEX_API_KEY for `codex exec`. On Bedrock the
+ *  real key stays in the meter's own environment, and the tools hold a stand-in the meter replaces. */
+const STAND_IN = "bench-the-meter-holds-the-key";
+const translated = provider === "openai" && args.tool === "claude-code";
+const keyEnv =
+	provider === "bedrock"
+		? { OPENAI_API_KEY: STAND_IN, ANTHROPIC_API_KEY: STAND_IN }
+		: translated
+			? { ANTHROPIC_API_KEY: STAND_IN }
+		: provider === "openai"
+			? { OPENAI_API_KEY: key, CODEX_API_KEY: key }
+			: { ANTHROPIC_API_KEY: key };
+
+const BEDROCK_UPSTREAM = "https://bedrock-mantle.us-east-1.api.aws";
 
 const taskDir = join(args["tasks-dir"], args.task);
 const task = JSON.parse(readFileSync(join(taskDir, "task.json"), "utf8"));
@@ -143,9 +155,41 @@ async function firstModelRequestAt(sandbox, meterLog) {
 	return undefined;
 }
 
+/**
+ * Runs the tool detached inside the sandbox and looks in on it, so nothing depends on one connection staying open for
+ * hours: E2B's command stream can drop ("[unknown] terminated"; 6 runs in round 1), and that used to end the run early.
+ * The tool's limit is kept here: past it, its whole process group is killed.
+ */
+async function runDetached(sandbox, command, options) {
+	const dir = "/tmp/relay-bench-tool";
+	const { timeoutMs, ...runOptions } = options;
+	const made = await sh(sandbox, `mkdir -p ${dir}`);
+	if (made.exitCode !== 0) throw new Error(`could not prepare the tool's folder: ${made.stderr.slice(-200)}`);
+	await sandbox.files.write(`${dir}/tool.sh`, `export PATH=${RUN_PATH}\n${command}\n`);
+	await sandbox.files.write(`${dir}/wrap.sh`, `sh ${dir}/tool.sh > ${dir}/out 2> ${dir}/err < /dev/null\necho $? > ${dir}/exit\n`);
+	const started = await sh(sandbox, `setsid nohup sh ${dir}/wrap.sh > /dev/null 2>&1 < /dev/null & echo $! > ${dir}/pid`, runOptions);
+	if (started.exitCode !== 0) throw new Error(`the tool did not start: ${started.stderr.slice(-200)}`);
+	const read = (name) => sandbox.files.read(`${dir}/${name}`).catch(() => "");
+	const deadline = Date.now() + timeoutMs;
+	let failures = 0;
+	let code;
+	let why;
+	while (code === undefined && !why) {
+		await new Promise((r) => setTimeout(r, 15_000));
+		const look = await sh(sandbox, `cat ${dir}/exit 2>/dev/null; true`).catch(() => undefined);
+		failures = look ? 0 : failures + 1;
+		const text = look?.stdout?.trim();
+		if (text) code = Number(text);
+		else if (failures >= 40) why = "lost the sandbox";
+		else if (Date.now() >= deadline) why = "deadline";
+	}
+	if (why === "deadline") await sh(sandbox, `kill -KILL -- -$(cat ${dir}/pid) 2>/dev/null; true`, { user: "root" }).catch(() => {});
+	return { exitCode: code ?? null, stdout: await read("out"), stderr: why ? `${await read("err")}\n${why}` : await read("err"), ...(why ? { error: why } : {}) };
+}
+
 /** Runs the tool, and for a kill fault kills its process group once, --fault-after-sec after its first model request. */
 async function runTool(sandbox, command, options, meterLog) {
-	if (args.fault !== "kill") return sh(sandbox, command, options);
+	if (args.fault !== "kill") return runDetached(sandbox, command, options);
 	const handle = await sandbox.commands.run(`export PATH=${RUN_PATH}; ${command}`, { ...options, background: true });
 	let killed = false;
 	const watcher = (async () => {
@@ -184,6 +228,7 @@ try {
 	const meterSource = readFileSync(join(ROOT, "meter", "meter.mjs"), "utf8");
 	record.meterSha256 = sha(meterSource);
 	await work.files.write("/opt/relay-bench/meter.mjs", meterSource, { user: "root" });
+	await work.files.write("/opt/relay-bench/anthropic-chat.mjs", readFileSync(join(ROOT, "meter", "anthropic-chat.mjs"), "utf8"), { user: "root" });
 	await work.files.write("/opt/relay-bench/meter-intercept.sh", readFileSync(join(ROOT, "sandbox", "meter-intercept.sh"), "utf8"), { user: "root" });
 	if (args.fault) await work.files.write(RESTART_LOOP, readFileSync(join(ROOT, "sandbox", "restart-loop.sh"), "utf8"), { user: "root" });
 	const setup = await sh(
@@ -241,12 +286,12 @@ try {
 	await work.commands.run(
 		`export PATH=${RUN_PATH}; node /opt/relay-bench/meter.mjs --port 443 --tls-cert /root/meter-tls/meter.crt ` +
 			`--tls-key /root/meter-tls/meter.key --upstream https://api.anthropic.com --openai-upstream https://api.openai.com ` +
-			`--resolve-upstream-by-dns ` +
+			`--resolve-upstream-by-dns ${provider === "bedrock" ? `--bedrock-upstream ${BEDROCK_UPSTREAM} ` : ""}${translated ? "--anthropic-via-openai " : ""}` +
 			`--plain-port 8787 --log ${meterLog} --cap-usd ${args["cap-usd"]}${meterFault} > ${METER_DIR}/meter.out 2>&1`,
-		{ background: true, envs: BASE_ENV, user: "root" },
+		{ background: true, envs: provider === "bedrock" || translated ? { ...BASE_ENV, BEDROCK_API_KEY: key } : BASE_ENV, user: "root" },
 	);
 	// Checked the way the tools will see it: as the sandbox user, by name, through the hosts file and the run's certificate.
-	const host = provider === "openai" ? "api.openai.com" : "api.anthropic.com";
+	const host = provider === "anthropic" || translated ? "api.anthropic.com" : "api.openai.com";
 	const up = await sh(
 		work,
 		`for i in $(seq 1 50); do curl -s -o /dev/null https://${host}/ && exit 0; sleep 0.1; done; cat ${METER_DIR}/meter.out; exit 1`,

@@ -99,10 +99,16 @@ test("Relay on an OpenAI model uses its openai provider on every tier", () => {
 test("each arm runs only the providers it supports", () => {
 	assert.equal(providerOf("claude-haiku-5-5"), "anthropic");
 	assert.equal(providerOf("gpt-6.1-sol"), "openai");
+	assert.equal(providerOf("minimax.minimax-m2.5"), "bedrock");
+	assert.equal(providerOf("qwen.qwen3-coder-next"), "bedrock");
+	assert.equal(armRuns(ARMS["claude-code"], "minimax.minimax-m2.5"), true);
+	assert.equal(armRuns(ARMS.codex, "minimax.minimax-m2.5"), false);
 	assert.throws(() => providerOf("gemini-3"));
 	assert.ok(armRuns(ARMS.relay, "gpt-6-luna") && armRuns(ARMS.relay, "claude-haiku-5-5"));
 	assert.ok(armRuns(ARMS.codex, "gpt-6-luna") && !armRuns(ARMS.codex, "claude-haiku-5-5"));
-	for (const tool of ["claude-code", "prime-agent", "hermes"]) assert.ok(!armRuns(ARMS[tool], "gpt-6-luna"), tool);
+	assert.ok(armRuns(ARMS["claude-code"], "gpt-6-luna"));
+	assert.ok(!armRuns(ARMS.hermes, "gpt-6-luna"));
+	assert.ok(armRuns(ARMS["prime-agent"], "gpt-6-luna") && armRuns(ARMS["prime-agent"], "claude-haiku-5-5"));
 });
 
 test("a local build is Relay from a package, named by a version no release channel publishes", () => {

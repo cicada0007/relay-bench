@@ -230,6 +230,10 @@ const workers = Array.from({ length: Number(args.concurrency) }, async () => {
 		inFlight--;
 		const last = result.text.trim().split("\n").pop();
 		console.log(`[${new Date().toISOString().slice(11, 19)}] ${last}  | stage $${stageSpent().toFixed(2)}`);
+		// No real attempt at a task costs nothing: the provider is refusing every call (a spent credit, say), and each
+		// further run would only record a false score that a resumed stage then skips.
+		const finished = records().find((r) => recordKey(r) === runKey(job));
+		if (finished && !finished.usage?.costUsd) stopped ||= `${job.task} on ${job.tool} spent nothing, so the provider is probably refusing calls; remove its record before resuming`;
 	}
 });
 await Promise.all(workers);
