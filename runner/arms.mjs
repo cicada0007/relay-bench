@@ -92,7 +92,10 @@ export const ARMS = {
 		/** `meta`: the meta-harness on (RELAY_META=1, relay-harness D-98 to D-103), for runs that judge a change to a value
 		 *  that acts only with it on, such as the router's starting table; the same for both arms of a gate (GATE.md,
 		 *  amendment 5). A release without the meta-harness ignores it. */
-		env: ({ meta = false } = {}) => ({ ...(meta ? { RELAY_META: "1" } : {}), RELAY_EXTERNAL_SANDBOX: "1" }),
+		/** RELAY_SIGN_IN_FIRST=0: since D-81 a machine that never signed in may not start a queue run ("Sign in to Relay
+		 *  first"); a benchmark sandbox has nobody to sign in, so the switch Relay documents for that is turned off. The
+		 *  $20-a-machine rule (D-71) still holds, and no run's cap comes near it. */
+		env: ({ meta = false } = {}) => ({ ...(meta ? { RELAY_META: "1" } : {}), RELAY_EXTERNAL_SANDBOX: "1", RELAY_SIGN_IN_FIRST: "0" }),
 		/** Relay's result is what a reviewer would merge: its verified task branches, merged in plan order. */
 		result: "relay-merge",
 	},

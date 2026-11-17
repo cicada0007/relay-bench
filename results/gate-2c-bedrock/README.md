@@ -56,3 +56,12 @@ node runner/run-stage.mjs --test pilot-gate2c --model qwen.qwen3-coder-next --to
 Keys: the Bedrock key from the Keychain item `relay-bench-bedrock` into the stage's environment only
 (RELAY_BENCH_BEDROCK_KEY), then the meter's; E2B_API_KEY from the shell's environment. OPENAI_API_KEY,
 ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL are unset.
+
+## Amendment 1 (17 Nov 2026, 09:45 UTC, during the smoke, before any Relay work)
+
+Relay 0.6.132's first smoke run planned the request (6 tasks, $0.005) and then refused `relay queue run`: "Sign in to
+Relay first. Run relay login, then start the run again." (D-81, sign in first). Nobody can sign in inside a benchmark
+sandbox. The Relay arm now sets `RELAY_SIGN_IN_FIRST=0`, the switch Relay reads for this
+(`core/relay-account/sign-in-first.ts`); the $20-per-machine sign-in rule (D-71) still applies and no run's cap comes
+near it. The refused run is kept as `void-records.jsonl` and not counted; Relay's smoke run starts again, alone, with
+the same task, model and $3 cap. Claude Code's smoke run was not touched.
