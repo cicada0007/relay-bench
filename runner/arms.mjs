@@ -268,7 +268,7 @@ export function saidDone(tool, { exitCode, stdout, relayMerge }) {
 			return false;
 		}
 	}
-	if (tool === "relay") return relayMerge?.planned > 0 && relayMerge.verified === relayMerge.planned;
+	if (tool === "relay") return relayMerge?.planned > 0 && relayMerge.verified === relayMerge.planned && !(relayMerge.partlyProven > 0);
 	if (tool === "codex") {
 		// `codex exec --json` prints one event a line; a turn ends with turn.completed or turn.failed. It said it was done
 		// when its last turn completed and it exited 0.
