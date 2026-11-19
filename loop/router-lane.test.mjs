@@ -203,9 +203,12 @@ test("the weekly cycle reads the arm outcomes only when given them, and keeps wh
 });
 
 test("a router proposal is pre-screened and gated with the meta-harness on for both arms; other changes are not", async () => {
-	assert.deepEqual(ARMS.relay.env({ meta: true }), { RELAY_META: "1" });
-	assert.deepEqual(ARMS.relay.env({ model: "claude-haiku-5-5" }), {});
-	assert.deepEqual(ARMS.relay.env(), {});
+	/* Every Relay arm runs in an outside sandbox with sign-in-first off (gate 2c, amendment 1); only the meta-harness
+	   switch differs between the arms. */
+	const always = { RELAY_EXTERNAL_SANDBOX: "1", RELAY_SIGN_IN_FIRST: "0" };
+	assert.deepEqual(ARMS.relay.env({ meta: true }), { RELAY_META: "1", ...always });
+	assert.deepEqual(ARMS.relay.env({ model: "claude-haiku-5-5" }), always);
+	assert.deepEqual(ARMS.relay.env(), always);
 
 	const arch = fakeArch();
 	const archText = fakeArchText();

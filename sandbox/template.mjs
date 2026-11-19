@@ -18,7 +18,9 @@ export const PINS = Object.freeze({
 	/** Codex CLI, for the comparison on an OpenAI model: 0.163.0, released 15 Oct 2026 (npm @openai/codex). Its flags
 	 *  were read from this version's `codex exec --help` (runner/arms.mjs). Added after round 1; the image must be built
 	 *  again before Codex runs. */
-	codex: "0.167.0",
+	/* Gate 2c moved this to 0.167.0 with the small-1 image; the gate never runs Codex, and Harbor's agents and the
+	   weekly loop are pinned to 0.163.0, so it is back there. Rebuild the image before a Codex run. */
+	codex: "0.163.0",
 });
 
 /** PATH inside a run: where each tool's installer puts its command for the sandbox user. */
