@@ -16,6 +16,13 @@ export const METER_PLAIN_URL = "http://127.0.0.1:8787";
 export const MODEL_SPECS = {
 	"claude-sonnet-5-5": { name: "Claude Sonnet 5.5", reasoning: true, cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 } },
 	"claude-haiku-5-5": { name: "Claude Haiku 5.5", reasoning: false, cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 } },
+	/** Prime Agent 0.10.2's built-in list stops at gpt-5.6-luna; the values are Relay's catalogue's. */
+	"gpt-6-luna": { name: "GPT-6 Luna", api: "openai-responses", reasoning: true, contextWindow: 1_050_000, cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 } },
+	/** On Amazon Bedrock, from its model card and pricing page (7 Nov 2026). Its reasoning comes back on its own, unasked. */
+	/** On Amazon Bedrock (bedrock-mantle), checked 17 Nov 2026: 256K context, accepts 65,536 output tokens, no reasoning,
+	 *  no prompt cache reported, so cached reads cost the input price. */
+	"qwen.qwen3-coder-next": { name: "Qwen3 Coder Next", api: "openai-completions", reasoning: false, input: ["text"], contextWindow: 262_144, maxTokens: 65_536, cost: { input: 0.5, output: 1.2, cacheRead: 0.5, cacheWrite: 0.5 } },
+	"minimax.minimax-m2.5": { name: "MiniMax M2.5", api: "openai-completions", reasoning: false, input: ["text"], contextWindow: 196_000, maxTokens: 32_000, cost: { input: 0.3, output: 1.2, cacheRead: 0.3, cacheWrite: 0.3 } },
 };
 function modelEntry(model) {
 	const spec = MODEL_SPECS[model];
@@ -23,21 +30,25 @@ function modelEntry(model) {
 	return {
 		id: model,
 		name: spec.name,
-		api: "anthropic-messages",
+		api: spec.api ?? "anthropic-messages",
 		reasoning: spec.reasoning,
 		...(spec.reasoning ? { thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } } : {}),
-		input: ["text", "image"],
+		input: spec.input ?? ["text", "image"],
 		cost: spec.cost,
-		contextWindow: 1_000_000,
-		maxTokens: 128_000,
+		contextWindow: spec.contextWindow ?? 1_000_000,
+		maxTokens: spec.maxTokens ?? 128_000,
 	};
 }
-/** The provider of a test model, from its id: Claude models are Anthropic's; GPT and o-series models are OpenAI's. */
+/** The provider of a test model, from its id: Claude models are Anthropic's; GPT and o-series models are OpenAI's; ids
+ *  with a vendor's prefix are open models on Amazon Bedrock. */
 export function providerOf(model) {
 	if (/^claude-/.test(model)) return "anthropic";
 	if (/^(gpt-|o\d)/.test(model)) return "openai";
+	if (/^(minimax|zai|qwen)\./.test(model)) return "bedrock";
 	throw new Error(`no provider known for model ${model}`);
 }
+/** The provider a tool's own settings name: on Bedrock a tool calls its "openai" provider, where the meter answers. */
+const settingsProvider = (model) => (providerOf(model) === "bedrock" ? "openai" : providerOf(model));
 
 export const WORK = "/home/user/work";
 export const REQUEST = "/home/user/request.md";
@@ -46,40 +57,51 @@ export const REQUEST = "/home/user/request.md";
 export const RESUME_PROMPT =
 	"Your previous session on this request was interrupted. Continue from where it stopped and finish the request in /home/user/request.md.";
 
+/** Relay counts Codex as usable only once it is signed in (~/.codex/auth.json), as a customer's would be. The key comes
+ *  from the run's environment over stdin, never on a command line. */
+const codexLogin = (model) => (model && providerOf(model) === "openai" ? 'printenv OPENAI_API_KEY | codex login --with-api-key >/dev/null 2>&1; ' : "");
+
 const quote = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
 export const ARMS = {
 	relay: {
 		label: "Relay",
-		providers: ["anthropic", "openai"],
+		providers: ["anthropic", "openai", "bedrock"],
 		/** Relay through its queue, one model on every tier, from the model's own provider: on an OpenAI model (the Codex
 		 *  comparison) it is Relay's "openai" provider, which reads OPENAI_API_KEY and calls api.openai.com, where the
 		 *  meter answers. A model arm (model watch) puts its own model on its tier, or on every tier. */
 		files: ({ model, override }) => {
-			const provider = providerOf(model);
-			const on = (tier) => `${provider}/${override && (override.tier === "all" || override.tier === tier) ? override.model : model}`;
+			const provider = settingsProvider(model);
+			const on =(tier) => `${provider}/${override && (override.tier === "all" || override.tier === tier) ? override.model : model}`;
 			return {
 				"/home/user/.relay/agent/settings.json": JSON.stringify({
 					defaultProvider: provider,
 					defaultModel: override?.tier === "all" ? override.model : model,
 					models: { tiers: { decider: on("decider"), strong: on("strong"), fast: on("fast") } },
 				}),
+				// The race's Codex attempts read Codex's own config: the test model, the same as every other tool here.
+				...(providerOf(model) === "openai" ? { "/home/user/.codex/config.toml": `model = ${JSON.stringify(model)}\n` } : {}),
+				// An open model is one Relay's catalogue does not hold, so it is told it, as a user adopting one would.
+				...(providerOf(model) === "bedrock" ? { "/home/user/.relay/agent/models.json": JSON.stringify({ providers: { openai: { models: [modelEntry(model)] } } }) } : {}),
 			};
 		},
-		command: ({ capUsd }) =>
-			`relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
+		command: ({ capUsd, model }) =>
+			`${codexLogin(model)}relay queue plan --file ${REQUEST} && relay queue run --spend-cap ${capUsd}`,
 		/** The queue keeps its plan and tasks on disk; running it again picks up where it stopped. */
-		resume: ({ capUsd }) => `relay queue run --spend-cap ${capUsd}`,
+		resume: ({ capUsd, model }) => `${codexLogin(model)}relay queue run --spend-cap ${capUsd}`,
 		/** `meta`: the meta-harness on (RELAY_META=1, relay-harness D-98 to D-103), for runs that judge a change to a value
 		 *  that acts only with it on, such as the router's starting table; the same for both arms of a gate (GATE.md,
 		 *  amendment 5). A release without the meta-harness ignores it. */
-		env: ({ meta = false } = {}) => (meta ? { RELAY_META: "1" } : {}),
+		/** RELAY_SIGN_IN_FIRST=0: since D-81 a machine that never signed in may not start a queue run ("Sign in to Relay
+		 *  first"); a benchmark sandbox has nobody to sign in, so the switch Relay documents for that is turned off. The
+		 *  $20-a-machine rule (D-71) still holds, and no run's cap comes near it. */
+		env: ({ meta = false } = {}) => ({ ...(meta ? { RELAY_META: "1" } : {}), RELAY_EXTERNAL_SANDBOX: "1", RELAY_SIGN_IN_FIRST: "0" }),
 		/** Relay's result is what a reviewer would merge: its verified task branches, merged in plan order. */
 		result: "relay-merge",
 	},
 	"prime-agent": {
 		label: "Prime Agent",
-		providers: ["anthropic"],
+		providers: ["anthropic", "openai", "bedrock"],
 		/** Prime Agent's documented unattended mode, gated on the task's own checks. Its turn, token, continuation and
 		 *  time limits are raised to the round's shared limits so its defaults (12 turns, 80,000 tokens, 30 minutes)
 		 *  do not stop a 3-hour request early; the meter's spend cap is the limit that binds, as for every tool. */
@@ -87,12 +109,17 @@ export const ARMS = {
 		 *  PrimeIntellect-ai/prime-agent#3477), so it cannot reach the meter at api.anthropic.com. It uses its endpoint
 		 *  setting instead; at v0.10.0 that setting only builds the request URL (crates/pa-ai/src/providers/anthropic/
 		 *  stream.rs), so its behaviour does not change. */
-		files: ({ model }) => ({
-			"/home/user/.prime/agent/settings.json": JSON.stringify({ defaultProvider: "anthropic", defaultModel: model }),
-			"/home/user/.prime/agent/models.json": JSON.stringify({
-				providers: { anthropic: { baseUrl: METER_PLAIN_URL, models: [modelEntry(model)] } },
-			}),
-		}),
+		files: ({ model }) => {
+			const provider = settingsProvider(model);
+			return {
+				"/home/user/.prime/agent/settings.json": JSON.stringify({ defaultProvider: provider, defaultModel: model }),
+				"/home/user/.prime/agent/models.json": JSON.stringify({
+					// On OpenAI, 0.10.2 trusts the sandbox's authorities (prime-agent#3477), so it reaches the meter at
+					// api.openai.com with its endpoint unchanged.
+					providers: { [provider]: { ...(provider === "anthropic" ? { baseUrl: METER_PLAIN_URL } : {}), models: [modelEntry(model)] } },
+				}),
+			};
+		},
 		command: ({ model, gates, limitMinutes }) => primeCommand({ model, gates, limitMinutes, prompt: `"$(cat ${REQUEST})"` }),
 		/** Its documented -c/--continue: the previous session, with the same unattended settings. */
 		resume: ({ model, gates, limitMinutes }) =>
@@ -102,7 +129,8 @@ export const ARMS = {
 	},
 	"claude-code": {
 		label: "Claude Code",
-		providers: ["anthropic"],
+		/** On Bedrock's open models and on OpenAI's the meter translates its Messages requests (meter/anthropic-chat.mjs). */
+		providers: ["anthropic", "bedrock", "openai"],
 		files: () => ({}),
 		/** Headless mode with permissions skipped inside the sandbox. Every Claude Code model tier is pinned to the
 		 *  test model so its background requests do not use a second model. */
@@ -251,7 +279,7 @@ function primeCommand({ model, gates, limitMinutes, prompt, extra }) {
 		...Object.values(gates).map((gate) => `--autonomous-gate ${quote(gate)}`),
 		"--autonomous-max-turns 100000 --autonomous-max-tokens 1000000000 --autonomous-max-continuations 100",
 		`--autonomous-timeout-ms ${limitMinutes * 60_000}`,
-		`--model anthropic/${model}`,
+		`--model ${settingsProvider(model)}/${model}`,
 		prompt,
 	].join(" ");
 }

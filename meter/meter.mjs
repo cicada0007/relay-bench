@@ -30,6 +30,14 @@
 // request's connection, and --fault errors answers every model request 529 overloaded_error, from --fault-after-sec
 // after the run's first model request, for --fault-for-sec. When a network fault starts, model connections already open
 // are cut too, as a real outage would. Each faulted request is logged with its fault.
+//
+// Open models on Amazon Bedrock (--bedrock-upstream, with the key in the meter's own BEDROCK_API_KEY, which no tool ever
+// sees): tools still reach api.anthropic.com and api.openai.com, but model requests go to Bedrock's Chat Completions
+// endpoint under the meter's key. Claude Code's Messages requests are translated (anthropic-chat.mjs); the others'
+// Chat Completions requests go on as they are, asking only for the usage the meter needs.
+//
+// --anthropic-via-openai does the same translation for Claude Code alone on an OpenAI model, with the key in the meter's
+// BEDROCK_API_KEY; every other tool on that model reaches OpenAI through the meter unchanged, as before.
 import { createHash } from "node:crypto";
 import { Resolver } from "node:dns";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -39,12 +47,15 @@ import { connect as netConnect } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import * as zlib from "node:zlib";
 import { parseArgs } from "node:util";
+import { responsesStreamTranslator, responsesToMessages, streamTranslator, toChatRequest, toMessagesError, toMessagesResponse, toResponsesRequest } from "./anthropic-chat.mjs";
 
 const { values } = parseArgs({
 	options: {
 		port: { type: "string", default: "8787" },
 		upstream: { type: "string", default: "https://api.anthropic.com" },
 		"openai-upstream": { type: "string", default: "https://api.openai.com" },
+		"bedrock-upstream": { type: "string" },
+		"anthropic-via-openai": { type: "boolean", default: false },
 		log: { type: "string", default: "usage.jsonl" },
 		"cap-usd": { type: "string" },
 		host: { type: "string", default: "127.0.0.1" },
@@ -81,7 +92,18 @@ export const PRICES = {
 	"gpt-5.6-sol": openai([4, 20, 0.4, 5, 10], [8, 30, 0.8, 10, 20]),
 	"gpt-5.6-terra": openai([2, 12, 0.2, 2.5, 5], [4, 18, 0.4, 5, 10]),
 	"gpt-5.6-luna": openai([0.2, 1.2, 0.02, 0.25, 0.5], [0.4, 1.8, 0.04, 0.5, 1]),
+	// Amazon Bedrock, us-east-1, Standard tier, read 7 Nov 2026 on aws.amazon.com/bedrock/pricing. The page lists no cached
+	// price, so cached tokens count at the full input price: the meter's figure is an upper bound on the bill.
+	"minimax.minimax-m2.5": bedrock(0.3, 1.2),
+	// Read 17 Nov 2026 (the founder's figures for the account): $0.50 in, $1.20 out per million tokens. Mantle reports no
+	// cached tokens for it, so every prompt token is billed at the input price.
+	"qwen.qwen3-coder-next": bedrock(0.5, 1.2),
+	"minimax.minimax-m2.1": bedrock(0.3, 1.2),
+	"zai.glm-5": bedrock(1, 3.2),
 };
+function bedrock(input, output) {
+	return { provider: "bedrock", input, output, cacheRead: input, write30m: input, write12h: input };
+}
 function openai([input, output, cacheRead, write30m, write12h], [lInput, lOutput, lCacheRead, lWrite30m, lWrite12h]) {
 	return {
 		provider: "openai",
@@ -116,7 +138,7 @@ export function costOf(usage) {
 	if (!base) return undefined;
 	const prompt = usage.input + usage.cacheRead + usage.cacheWrite;
 	const price = base.long && prompt > base.long.above ? base.long : base;
-	if (base.provider === "openai") {
+	if (base.provider === "openai" || base.provider === "bedrock") {
 		const write12h = usage.cacheWrite12h ?? 0;
 		const write30m = usage.cacheWrite - write12h;
 		const dollars =
@@ -350,6 +372,85 @@ const errorBody = {
 };
 const faultStatus = { anthropic: 529, openai: 503 };
 
+const bedrockUpstream = values["bedrock-upstream"] ? new URL("v1/chat/completions", `${values["bedrock-upstream"].replace(/\/$/, "")}/`) : undefined;
+const openaiResponsesUpstream = new URL("v1/responses", `${values["openai-upstream"].replace(/\/$/, "")}/`);
+/** One run's reasoning and cache key on the OpenAI route: a meter serves one run. */
+const responsesMemory = new Map();
+const promptCacheKey = `relay-bench-${process.pid}-${Date.now()}`;
+
+/** One model request sent to Bedrock under the meter's key, and its answer back in the format the tool spoke. */
+async function viaBedrock(req, res, provider, started) {
+	const chunks = [];
+	for await (const chunk of req) chunks.push(chunk);
+	const sent = JSON.parse(decodeBody(Buffer.concat(chunks), req.headers["content-encoding"]));
+	const translate = provider === "anthropic";
+	const toOpenAI = !bedrockUpstream;
+	const chat = toOpenAI
+		? toResponsesRequest(sent, sent.model, { cacheKey: promptCacheKey, memory: responsesMemory })
+		: translate
+			? toChatRequest(sent, sent.model)
+			: { ...sent, ...(sent.stream ? { stream_options: { ...sent.stream_options, include_usage: true } } : {}) };
+	const asked = askedOf(provider, sent);
+	const note = (status, usage, extra = {}) => {
+		const known = usage ? { ...usage, model: usage.model ?? sent.model } : undefined;
+		log({ ts: new Date().toISOString(), path: req.url, provider: "bedrock", status, ms: Date.now() - started, ...asked, ...(known ?? {}), ...(known ? priced(known) : {}), ...extra });
+	};
+	const body = Buffer.from(JSON.stringify(chat));
+	let response;
+	try {
+		response = await forward("POST", toOpenAI ? openaiResponsesUpstream : bedrockUpstream, { authorization: `Bearer ${process.env.BEDROCK_API_KEY}`, "content-type": "application/json", accept: chat.stream ? "text/event-stream" : "application/json" }, body);
+	} catch (error) {
+		note(0, undefined, { error: String(error).slice(0, 200) });
+		res.writeHead(502, { "content-type": "application/json" });
+		res.end(JSON.stringify(errorBody[provider].unreachable()));
+		return;
+	}
+	const contentType = response.headers["content-type"] ?? "";
+	const ok = response.statusCode >= 200 && response.statusCode < 300;
+	const seen = [];
+	if (ok && chat.stream && contentType.includes("event-stream")) {
+		res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+		const translator = toOpenAI ? responsesStreamTranslator(sent.model, responsesMemory) : translate ? streamTranslator(sent.model) : undefined;
+		for await (const chunk of response) {
+			seen.push(chunk);
+			res.write(translator ? translator.push(chunk.toString("utf8")) : chunk);
+		}
+		if (translator) res.write(translator.end());
+		res.end();
+		note(200, usageFromOpenAI(Buffer.concat(seen).toString("utf8"), contentType), translator?.failure ? { refusal: translator.failure.message.slice(0, 300) } : {});
+		return;
+	}
+	for await (const chunk of response) seen.push(chunk);
+	const text = Buffer.concat(seen).toString("utf8");
+	if (!ok) {
+		res.writeHead(response.statusCode, { "content-type": "application/json", ...(response.headers["retry-after"] ? { "retry-after": response.headers["retry-after"] } : {}) });
+		res.end(translate ? JSON.stringify(toMessagesError(response.statusCode, text)) : text);
+		// A refusal's own words, cut short: they name a setting, never the prompt.
+		note(response.statusCode, undefined, { refusal: toMessagesError(response.statusCode, text).error.message.slice(0, 300) });
+		return;
+	}
+	let json;
+	try {
+		json = JSON.parse(text);
+	} catch {}
+	res.writeHead(200, { "content-type": "application/json" });
+	res.end(translate && json ? JSON.stringify(toOpenAI ? responsesToMessages(json, sent.model, responsesMemory) : toMessagesResponse(json, sent.model)) : text);
+	note(200, usageFromOpenAI(text, contentType));
+}
+
+/** A request that asks for no tokens, on Bedrock: Claude Code's token count is estimated here; there is nothing else. */
+async function bedrockOther(req, res, provider) {
+	const chunks = [];
+	for await (const chunk of req) chunks.push(chunk);
+	if (req.method === "POST" && String(req.url).split("?")[0].endsWith("/count_tokens")) {
+		res.writeHead(200, { "content-type": "application/json" });
+		res.end(JSON.stringify({ input_tokens: Math.ceil(Buffer.concat(chunks).length / 4) }));
+		return;
+	}
+	res.writeHead(404, { "content-type": "application/json" });
+	res.end(JSON.stringify(provider === "anthropic" ? toMessagesError(404, "not available here") : { error: { type: "not_found", message: "not available here" } }));
+}
+
 async function handle(req, res) {
 	const started = Date.now();
 	const provider = providerForHost(req.headers.host);
@@ -377,6 +478,8 @@ async function handle(req, res) {
 		res.end(JSON.stringify(errorBody[provider].cap()));
 		return;
 	}
+	if (bedrockUpstream) return isModelRequest ? viaBedrock(req, res, provider, started) : bedrockOther(req, res, provider);
+	if (values["anthropic-via-openai"] && provider === "anthropic") return isModelRequest ? viaBedrock(req, res, provider, started) : bedrockOther(req, res, provider);
 	const chunks = [];
 	for await (const chunk of req) chunks.push(chunk);
 	const headers = {};
